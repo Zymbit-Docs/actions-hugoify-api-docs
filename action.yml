@@ -2,9 +2,12 @@ name: Zymbit Docs Action for Hugoify-ing API Docs
 description: A Python container action that parses and reformats automatically-generated API docs.
 author: Nick Anderegg
 inputs:
-  path:
+  rawPath:
     description: The path to the directory containing the automatically-generated API docs.
     default: "./content/GENERATED/"
+  outputPath:
+    description: The path where the final rendered API docs will be placed.
+    default: "./content/api/"
 outputs:
   testOutput:
     description: Output just for testing purposes.
