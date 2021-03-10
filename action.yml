@@ -1,13 +1,13 @@
-name: "Python Container Action Template"
-description: "Get started with Python Container actions"
-author: "Jacob Tomlinson"
+name: Zymbit Docs Action for Hugoify-ing API Docs
+description: A Python container action that parses and reformats automatically-generated API docs.
+author: Nick Anderegg
 inputs:
-  myInput:
-    description: "Input to use"
-    default: "world"
+  path:
+    description: The path to the directory containing the automatically-generated API docs.
+    default: "./content/GENERATED/"
 outputs:
-  myOutput:
-    description: "Output from the action"
+  testOutput:
+    description: Output just for testing purposes.
 runs:
   using: "docker"
   image: "Dockerfile"
