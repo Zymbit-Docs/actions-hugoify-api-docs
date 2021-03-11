@@ -8,9 +8,6 @@ inputs:
   outputPath:
     description: The path where the final rendered API docs will be placed.
     default: "./content/api/"
-outputs:
-  processingResults:
-    description: A summary of the files that were processed.
 runs:
   using: "docker"
   image: "Dockerfile"

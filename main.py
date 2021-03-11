@@ -65,8 +65,6 @@ def main():
     with open(".GHA-LOG", "w") as f:
         f.write(output_result)
 
-    print(f"::set-output name=processingResults::{output_result}")
-
     sys.exit(0)
 
 
