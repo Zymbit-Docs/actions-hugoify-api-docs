@@ -53,9 +53,9 @@ def main():
         generate_output(input_file, output_file)
 
         if output_already_exists:
-            output_log.append(f"Processed the CHANGED file `{input_file.name}`.")
+            output_log.append(f"Processed the CHANGED file {input_file.name}.")
         else:
-            output_log.append(f"Processed the NEW file `{input_file.name}`.")
+            output_log.append(f"Processed the NEW file {input_file.name}.")
 
     output_result = "\n- ".join(output_log)
     output_result = f"- {output_result}"
