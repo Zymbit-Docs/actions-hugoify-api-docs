@@ -57,11 +57,10 @@ def main():
         else:
             output_log.append(f"Processed the NEW file `{input_file.name}`.")
 
-        break
-
     output_log = "\n- ".join(output_log)
     output_log = f"- {output_log}"
 
+    print(f"The following files were processed:\n\n{output_log}")
     print(f"::set-output name=processingResults::{output_log}")
 
     sys.exit(0)
