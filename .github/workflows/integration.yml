@@ -1,5 +1,11 @@
+---
+# Because this container requires a functioning Hugo repo to run properly,
+# the intergration test really only checks that the container builds.
 name: Integration Test
-on: [push]
+
+on:
+  - push
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -7,10 +13,4 @@ jobs:
       - uses: actions/checkout@master
       - name: Self test
         id: selftest
-
-        # Put your action repo here
-        uses: jacobtomlinson/python-container-action@master
-
-      - name: Check outputs
-        run: |
-          test "${{ steps.selftest.outputs.myOutput }}" == "Hello world"
+        uses: zymbit-docs/actions-hugoify-api-docs@master
