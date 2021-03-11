@@ -104,6 +104,9 @@ def generate_output(input_file: pathlib.Path, output_file: pathlib.Path):
     frontmatter = generate_frontmatter(output_file)
     content = parse_content(input_file)
 
+    # Make sure the parent directories exist before attempting to write
+    # to the output file.
+    output_file.parent.mkdir(parents=True, exist_ok=True)
     with output_file.open("w") as f:
         f.write(frontmatter)
         f.write(page_edit_warning)
