@@ -11,6 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@master
-      - name: Self test
-        id: selftest
-        uses: zymbit-docs/actions-hugoify-api-docs@master
+      - name: Image build test
+        id: buildtest
+        run: |
+          docker build -t zymbit-docs/hugoify-api-docs:latest .
