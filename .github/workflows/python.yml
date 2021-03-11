@@ -1,18 +1,34 @@
+---
 name: Lint
-on: [push, pull_request]
+
+on:
+  - push
+  - pull_request
+
 jobs:
-  lint:
-    name: Lint
+  lint_python:
+    name: Lint Python code
     runs-on: ubuntu-latest
     steps:
-      - name: Set up Python 3.7
+      - name: Set up latest version of Python 3
         uses: actions/setup-python@v1
         with:
-          python-version: "3.7"
+          python-version: "3.x"
 
       - uses: actions/checkout@v1
 
-      - name: Lint
-        run: |
-          pip install flake8
-          flake8 main.py
+      - name: Install Python linter/formatter
+        run: pip install black
+
+      - name: Lint Python code
+        run: black --check .
+
+  lint_docker:
+    name: Lint Dockerfile
+    runs-on: ubuntu-latest
+    container:
+      image: hadolint/hadolint:latest-alpine
+    steps:
+      - uses: actions/checkout@v1
+      - name: Lint Dockerfile
+        run: hadolint Dockerfile
