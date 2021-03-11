@@ -61,6 +61,10 @@ def main():
     output_result = f"- {output_result}"
 
     print(f"The following files were processed:\n\n{output_result}")
+
+    with open(".GHA-LOG", "w") as f:
+        f.write(output_result)
+
     print(f"::set-output name=processingResults::{output_result}")
 
     sys.exit(0)
