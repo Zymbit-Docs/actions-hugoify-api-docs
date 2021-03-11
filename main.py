@@ -3,6 +3,8 @@ import os, sys
 import pathlib
 from datetime import datetime
 
+from typing import List
+
 # import frontmatter
 from ruamel.yaml import YAML
 from ruamel.yaml.compat import StringIO
@@ -174,7 +176,7 @@ def parse_content(input_file: pathlib.Path) -> str:
     if file_content[1] != "\n":
         first_pass.append(file_content[1])
 
-    combined_line = []
+    combined_line: List[str] = []
     for line in file_content[2:]:
         if line == "\n":
             if not last_was_newline:
