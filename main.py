@@ -301,7 +301,6 @@ def parse_content(input_file: pathlib.Path) -> str:
             #     # print(result.groups(), line.rstrip())
             #     # line = f"##### {result.group(1)}"
 
-            # parsed_content.append(line)
             if not combined_line:
                 if line.startswith("### "):
                     # combined_line.append(line)
@@ -316,6 +315,8 @@ def parse_content(input_file: pathlib.Path) -> str:
     # pprint(first_pass[:200])
     second_pass = []
     for line in first_pass:
+        if line.startswith("### class"):
+            line = line[1:]
         if line.startswith("##"):
             if line[-1] == ".":
                 line = line[:-1]
