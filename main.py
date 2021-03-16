@@ -214,7 +214,7 @@ def parse_content(input_file: pathlib.Path) -> str:
             for submatch in submatches:
                 submatch_groups = submatch.groupdict()
                 new_content.append(
-                    f"- `{submatch_groups['list_item_name']}` {submatch_groups['list_item_body']}"
+                    f"* `{submatch_groups['list_item_name']}` {submatch_groups['list_item_body']}"
                 )
 
                 grouped_lines = submatch_groups["grouped_lines"].split("\n")
@@ -236,6 +236,8 @@ def parse_content(input_file: pathlib.Path) -> str:
             final_lines = []
             for line in body_lines:
                 final_lines.append(line.replace("    ", "  "))
+
+            final_lines[0] = f"* {final_lines[0].lstrip()}"
 
             new_content += final_lines
             new_content.append("")
@@ -301,7 +303,12 @@ def parse_content(input_file: pathlib.Path) -> str:
 
             # parsed_content.append(line)
             if not combined_line:
-                combined_line.append(line.rstrip())
+                if line.startswith("### "):
+                    # combined_line.append(line)
+                    first_pass.append(line)
+                    first_pass.append("\n")
+                else:
+                    combined_line.append(line.rstrip())
                 # combined_line.append("".join(line.split("\n")))
             else:
                 combined_line.append(line.strip(" \n"))
