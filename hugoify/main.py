@@ -104,7 +104,19 @@ def generate_output(input_file: pathlib.Path, output_file: pathlib.Path):
     output_file
         A `Path()` representing the location where the processed file should be written.
     """
-    frontmatter = generate_frontmatter(output_file)
+
+    with input_file.open("r") as f:
+        first_line = next(f)
+
+    if first_line.startswith("# "):
+        if len(segments := first_line.split("{")) > 1:
+            first_line = segments[0].strip()
+
+        file_title = first_line.removeprefix("# ")
+    else:
+        file_title = None
+
+    frontmatter = generate_frontmatter(output_file, file_title=file_title)
     content = parse_content(input_file)
 
     # Make sure the parent directories exist before attempting to write
@@ -116,7 +128,7 @@ def generate_output(input_file: pathlib.Path, output_file: pathlib.Path):
         f.write(content)
 
 
-def generate_frontmatter(output_file: pathlib.Path) -> str:
+def generate_frontmatter(output_file: pathlib.Path, file_title: str = None) -> str:
     """Generate the YAML frontmatter containing metadata for Hugo.
 
     Parameters
@@ -130,12 +142,16 @@ def generate_frontmatter(output_file: pathlib.Path) -> str:
         A string containing the generate YAML frontmatter.
     """
     doc_language = output_file.stem.split("_")[0].capitalize()
+    if doc_language == "cpp":
+        doc_language = "C++"
+
+    if not file_title:
+        file_title = f"{doc_language} API Documentation"
 
     timestamp = datetime.now().strftime("%Y-%m-%dT%H:%M:%S%z")
     metadata = {
-        "title": f"{doc_language} API Documentation",
+        "title": file_title.strip(),
         "description": f"This is the official documentation for the official zkapputils {doc_language} API library.",
-        "date": timestamp,
         "lastmod": timestamp,
         "draft": False,
         "images": [],
@@ -250,7 +266,11 @@ def parse_content(input_file: pathlib.Path) -> str:
         file_content = io.StringIO(merged_content).readlines()
     else:
         file_content = io.StringIO(file_content_str).readlines()
-        return "".join(file_content)
+
+        if file_content[0].startswith("# "):
+            return "".join(file_content[1:])
+        else:
+            return "".join(file_content)
 
     print("Length of content:", len(file_content))
 
