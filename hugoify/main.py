@@ -42,6 +42,11 @@ def main():
     input_dir = pathlib.Path(os.environ["INPUT_RAWPATH"])
     output_dir = pathlib.Path(os.environ["INPUT_OUTPUTPATH"])
 
+    if not input_dir.exists():
+        print("Exiting because there are no files to process...")
+        sys.exit(0)
+        return
+
     output_log = []
     for f in input_dir.iterdir():
         base_file_name = f.name.removeprefix("GENERATED_")
