@@ -4,5 +4,5 @@ WORKDIR /app
 
 RUN pip install --target=/app --no-cache-dir ruamel.yaml
 
-ENV PYTHONPATH /app
-CMD ["/app/main.py"]
+ENV PYTHONPATH /app/hugoify:/app
+CMD ["/app/hugoify/main.py"]

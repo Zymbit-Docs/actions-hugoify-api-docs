@@ -246,7 +246,11 @@ def parse_content(input_file: pathlib.Path) -> str:
 
     merged_content = "\n".join(full_content)
 
-    file_content = io.StringIO(merged_content).readlines()
+    if merged_content:
+        file_content = io.StringIO(merged_content).readlines()
+    else:
+        file_content = io.StringIO(file_content_str).readlines()
+        return "".join(file_content)
 
     print("Length of content:", len(file_content))
 
