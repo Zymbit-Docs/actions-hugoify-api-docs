@@ -1,0 +1,21 @@
+[tool.poetry]
+name = "hugoify"
+version = "0.1.0"
+description = ""
+authors = ["Nick Anderegg <nick.anderegg@zymbit.com>"]
+license = "MIT"
+
+[tool.poetry.dependencies]
+python = "^3.9"
+"ruamel.yaml" = "^0.17.2"
+lxml = "^4.6.3"
+
+[tool.poetry.dev-dependencies]
+
+[tool.poetry.scripts]
+hugoify = 'hugoify:main'
+xslt = "hugoify:xslt"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"

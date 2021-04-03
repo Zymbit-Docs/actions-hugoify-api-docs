@@ -53,7 +53,7 @@ def main():
         return
 
     output_log = []
-    for f in input_dir.iterdir():
+    for f in input_dir.glob("*.html"):
         print(f"Processing {str(f)}...")
         frontmatter, parsed = parse_file(f)
 
