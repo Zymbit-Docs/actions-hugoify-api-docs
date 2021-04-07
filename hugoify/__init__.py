@@ -663,9 +663,23 @@ class CodeFile(object):
         if def_list is not None:
             content.remove(def_list)
 
+        if self.domain == self.DOMAIN_PY:
+            # if (elem := content.find(".//definition_list")) :
+            #     ugly_dump(elem)
+            literal_emph = content.xpath(
+                ".//definition_list//list_item//literal_emphasis"
+            )
+
+            for elem in literal_emph:
+                elem.tag = "literal"
+                elem.set("classes", "xref")
+
         param_list = content.find("./definition_list[@content-type='parameters']")
+        param = None
         if param_list is not None:
             for param in param_list:
+                param_copy = deepcopy(param)
+                # ugly_dump(param)
                 new_item = E.param("")
 
                 param_values = list(param)  # param.find("./paragraph/literal")
@@ -693,56 +707,21 @@ class CodeFile(object):
                         param_desc_elem.extend(param_values[1:])
 
                 else:
-                    param_name = param_values[0].find("./literal_strong")
+                    # ugly_dump(param_values[0], count=10000)
+                    new_item = self.__process_python_methods(
+                        new_item,
+                        param_values[0],
+                        param_values[1:],
+                    )
 
-                    if param_name is not None:
-                        param_name_elem = E.param_name(param_name.text.strip())
-                    else:
-                        param_name_elem = E.param_name("")
-
-                    param_type = param_values[0].find("./literal_emphasis")
-                    if param_type is not None:
-                        param_type_elem = E.param_type(param_type.text.strip())
-                    else:
-                        param_type_elem = E.param_type("")
-                        complex_type = param_values[0].xpath(
-                            "./literal[contains(@classes, 'xref')]"
-                        )
-                        full_param_type = ""
-
-                        if complex_type is not None:
-                            for _ in complex_type:
-                                full_param_type = f"{full_param_type}{_.text}"
-                                if _.tail:
-                                    full_param_type = f"{full_param_type}{_.tail}"
-
-                                _.find("..").remove(_)
-
-                            full_param_type = full_param_type.split(" – ")[0]
-                            full_param_type = full_param_type.rstrip(") ")
-
-                            param_type_elem = E.param_type(full_param_type)
-
-                    new_item.append(param_name_elem)
-                    new_item.append(param_type_elem)
-
-                    remaining_text = E.paragraph("")
-                    if param_name is not None:
-                        if len(param_name.tail):
-                            remaining_text.text = param_name.tail
-                        param_values[0].remove(param_name)
-                    if param_type is not None:
-                        if param_type.tail:
-                            remaining_text.text = (
-                                f"{remaining_text.text}{param_type.tail}"
-                            )
-                        param_values[0].remove(param_type)
-
-                    param_desc_elem = deepcopy(param_values[0].find(".."))
-
-                    new_item.append(remaining_text)
-                new_item.append(param_desc_elem)
-                param_list.replace(param, new_item)
+                    # new_item.append(param_desc_elem)
+                    # param_list.replace(param, new_item)
+                    # print("\n==================================\nOriginal:\n")
+                    # ugly_dump(param_copy)
+                    # print("\n----------------------------------\nModified:\n")
+                    # ugly_dump(new_item)
+                content.append(new_item)
+                # param_list.append(E.DIVIDER())
 
         exceptions_list = content.find("./definition_list[@content-type='exceptions']")
         if exceptions_list is not None:
@@ -774,6 +753,208 @@ class CodeFile(object):
         if return_value_elem is not None:
             content.append(deepcopy(return_value_elem))
             content.remove(return_value_elem)
+
+    def __process_python_methods(self, new_item, param_elems, tail_elems: list = None):
+        # if tail_elems:
+        #     for _ in tail_elems:
+        #         ugly_dump(_)
+        # for _ in param_elems:
+        #     print(_.tag, " / ", end="")
+        # print()
+        # param_elems = param_values[0]
+        # children = param_elems.iterchildren()
+        original_copy = deepcopy(param_elems)
+        first_child = next(param_elems.iterchildren())
+
+        param_name_elem = E.param_name("")
+        param_name_elem.text = first_child.text.strip()
+
+        new_item.append(param_name_elem)
+
+        param_type_elem = E.param_type("")
+        param_desc_elem = E.param_desc("")
+        # if first_child.tail:
+
+        if not first_child.tail:
+            print("NO TAIL!:")
+            ugly_dump(param_elems)
+        else:
+            first_elem_tail = first_child.tail
+            param_elems.remove(first_child)
+
+        # If it has no type at all, we just add the empty param_type
+        # element to the tree and add the tail of the parameter name
+        # element's tail.
+        if first_elem_tail != " (":
+            ugly_dump(first_child)
+            new_item.append(param_type_elem)
+
+            param_description = first_elem_tail.lstrip(" –")
+            param_description = param_description.strip()
+
+            fixed_newlines = []
+            for line in param_description.split("\n"):
+                fixed_newlines.append(line.strip())
+
+            param_desc_elem.text = " ".join(fixed_newlines)
+
+        # If the tail is " (", then it means that a type is specified.
+        # We have to consider a few things about how we process this.
+        else:
+
+            type_literals = param_elems.xpath("./literal[contains(@classes, 'xref')]")
+
+            if len(type_literals) == 1:
+                param_type_elem.text = type_literals[0].text.strip()
+
+                if type_literals[0].tail:
+                    param_desc_elem.text = type_literals[0].tail
+
+                param_desc_elem.text = param_desc_elem.text.lstrip(")")
+                param_desc_elem.text = param_desc_elem.text.strip(" –")
+                param_desc_elem.text = param_desc_elem.text.strip()
+
+                param_elems.remove(type_literals[0])
+
+            else:
+                # ugly_dump(param_elems)
+                type_text = []
+                for _ in type_literals:
+                    if _.text:
+                        type_text.append(_.text)
+                    if _.tail:
+                        type_text.append(_.tail)
+
+                    param_elems.remove(_)
+
+                selected_type_text = "".join(type_text)
+                segments = selected_type_text.split(" – ")
+                selected_type_text = segments[0]
+                selected_type_text = selected_type_text.rstrip(" )")
+                param_type_elem.text = selected_type_text
+
+                if len(segments) > 1:
+                    end_segment = " – ".join(segments[1:])
+
+                    param_desc_elem.text = end_segment.lstrip(")")
+                    param_desc_elem.text = param_desc_elem.text.strip(" –")
+                    param_desc_elem.text = param_desc_elem.text.strip()
+
+                # print(selected_type_text)
+                # last_child = next(
+                #     param_elems.iterchildren(reversed=True)
+                # )
+
+            # if len(param_elems) > 1:
+            #     print(list(param_elems))
+            #     ugly_dump(param_elems)
+
+            remaining_elems = list(param_elems)
+            # if remaining_elems:
+            #     ugly_dump(param_elems)
+            for _ in remaining_elems:
+                param_desc_elem.append(deepcopy(_))
+                param_elems.remove(_)
+            # # Check to see if there are top-level <paragraph> elements
+            # # within the description. If there are, we want to pull
+            # # those out separately.
+            # desc_paragraphs = param_elems.xpath("./paragraph")
+            # if desc_paragraphs:
+            #     # param_desc_elem = E.param_desc("")
+            #     for _ in desc_paragraphs:
+            #         param_desc_elem.append(deepcopy(_))
+            #         param_elems.remove(_)
+
+            # # If the parameter description isn't organized into paragraphs
+            # # we must be more granular.
+            # else:
+            # type_literals = param_elems.xpath(
+            #     "./literal[contains(@classes, 'xref')]"
+            # )
+
+            # if len(type_literals) == 1:
+            #     # ugly_dump(param_elems)
+            #     param_type_elem.text = type_literals[0].text.strip()
+
+            #     if type_literals[0].tail:
+            #         param_desc_elem.text = type_literals[0].tail
+
+            #     param_elems.remove(type_literals[0])
+
+            # else:
+            #     # ugly_dump(param_elems)
+            #     type_text = []
+            #     for _ in type_literals:
+            #         if _.text:
+            #             type_text.append(_.text)
+            #         if _.tail:
+            #             type_text.append(_.tail)
+
+            #         param_elems.remove(_)
+
+            #     selected_type_text = "".join(type_text)
+            #     selected_type_text = selected_type_text.split(" – ")[0]
+            #     selected_type_text = selected_type_text.rstrip(" )")
+            #     param_type_elem.text = selected_type_text
+            #     # last_child = next(
+            #     #     param_elems.iterchildren(reversed=True)
+            #     # )
+
+            # remaining_elems = list(param_elems)
+            # for _ in remaining_elems:
+            #     param_desc_elem.append(deepcopy(_))
+            #     param_elems.remove(_)
+
+        if tail_elems:
+            for _ in tail_elems:
+                param_desc_elem.append(deepcopy(_))
+                _.find("..").remove(_)
+
+        if param_type_elem is not None:
+            new_item.append(param_type_elem)
+        if param_desc_elem is not None:
+            new_item.append(param_desc_elem)
+
+        # print("\n==================================\nOriginal:\n")
+        # ugly_dump(original_copy)
+        # print("\n----------------------------------\nModified:\n")
+        # ugly_dump(new_item)
+
+        return new_item
+
+        # If the last tag within the param content is a literal
+        # then we can just grab the tail as our description.
+        # if last_child.tag == "literal" and last_child.tail:
+        #     param_description = last_child.tail
+        #     param_description = param_description.lstrip(" –")
+        #     param_description = param_description.strip()
+
+        #     fixed_newlines = []
+        #     for line in param_description.split("\n"):
+        #         fixed_newlines.append(line.strip())
+
+        #     param_desc_elem.text = " ".join(fixed_newlines)
+        #     last_child.tail = ""
+        # else:
+        # type_literals = param_elems.xpath(
+        #     "./literal[contains(@classes, 'xref')]"
+        # )
+
+        # type_text = []
+        # for _ in type_literals:
+        #     if _.text:
+        #         type_text.append(_.text)
+        #     if _.tail:
+        #         type_text.append(_.tail)
+
+        #     param_elems.remove(_)
+
+        # selected_type_text = "".join(type_text)
+        # selected_type_text = selected_type_text.split(
+        #     " – "
+        # )[0]
+        # selected_type_text = selected_type_text.rstrip(" )")
+        # param_type_elem.text = selected_type_text
 
     def __clean_class_signature(self, elem_root):
         if type(elem_root) is list:
