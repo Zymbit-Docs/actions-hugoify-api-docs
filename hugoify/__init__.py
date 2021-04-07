@@ -127,11 +127,16 @@ class CodeFile(object):
         self.preparser_format()
         self.generate_frontmatter()
         self.parse_intro()
+
+        self.pre_tidy_tree()
+
         # return
         if self.domain == self.DOMAIN_CPP:
             self._parse_cpp()
+        elif self.domain == self.DOMAIN_PY:
+            self._parse_py()
 
-        self.tidy_tree()
+        # self.tidy_tree()
 
     def preparser_format(self):
         for elem in self.root.xpath(".//paragraph"):
@@ -189,12 +194,7 @@ class CodeFile(object):
         # for ix, _ in enumerate(unnested_elems):
         #     self.root.insert(ix, _)
 
-    def tidy_tree(self):
-
-        for elem in self.root.xpath(".//index"):
-            parent = elem.find("..")
-            parent.remove(elem)
-
+    def pre_tidy_tree(self):
         for elem in self.root.xpath(".//desc_signature"):
             ids = elem.get("ids")
             if ids:
@@ -202,6 +202,22 @@ class CodeFile(object):
                 new_id = new_id.strip()
 
                 elem.set("ids", new_id)
+
+        terms_xpath = "//term[count(./*)<2 and ./strong]"
+        for elem in self.root.xpath(terms_xpath):
+            etree.strip_tags(elem, "strong")
+            elem.text = elem.text.strip()
+
+        for elem in self.root.xpath(".//index"):
+            parent = elem.find("..")
+            parent.remove(elem)
+
+        for elem in self.root.xpath(".//desc_signature_line"):
+            parent = elem.find("..")
+            parent.extend(list(deepcopy(elem)))
+            parent.remove(elem)
+
+    def tidy_tree(self):
 
         for elem in self.root.xpath("//paragraph"):
             if elem.text and len(elem.text.strip()):
@@ -221,10 +237,76 @@ class CodeFile(object):
             for ix, _ in enumerate(children):
                 parent.insert(curr_ix + ix, _)
 
-        terms_xpath = "//term[count(./*)<2 and ./strong]"
-        for elem in self.root.xpath(terms_xpath):
-            etree.strip_tags(elem, "strong")
+        for elem in self.root.xpath("//paragraph"):
+            if not elem.text or len(elem.text.strip()) == 0:
+                if not elem.tail or len(elem.tail.strip()) == 0:
+                    if len(list(elem)) == 0:
+                        elem.find("..").remove(elem)
+                continue
+
             elem.text = elem.text.strip()
+
+            if len(elem.text) == 0:
+                continue
+
+            final_char = elem.text[-1]
+            if final_char in "\"'":
+                final_char = elem.text[-1]
+
+            if final_char not in "!.?:,":
+                elem.text = f"{elem.text}."
+
+    def _parse_py(self):
+        if self.domain != self.DOMAIN_PY:
+            raise RuntimeError("_parse_py can only be called on Python definitions.")
+
+        # Move classes to a dedicated section
+        classes_section = self.__arrange_classes()
+        self.root.find("./section[@id='abstract']").addnext(classes_section)
+
+        # This function isn't likely to do anything to Python docs,
+        # but it can't hurt.
+        self.__remove_reference_elems()
+
+        # Rename field and remove unnecessary attr
+        sig_names = self.root.xpath(".//desc_parameter/desc_sig_name")
+        for sig_name in sig_names:
+            parent = sig_name.find("..")
+
+            new_name = E.desc_name(sig_name.text.strip())
+            parent.replace(sig_name, new_name)
+
+            if (next_elem := new_name.getnext()) is not None:
+                if next_elem.tag == "desc_sig_operator":
+                    parent.remove(next_elem)
+
+        # Rename default values field
+        default_value_elems = self.root.xpath(
+            ".//desc_parameter/inline[@classes='default_value']"
+        )
+        for elem in default_value_elems:
+            parent = elem.find("..")
+
+            new_elem = E.default_value(elem.text.strip())
+            parent.replace(elem, new_elem)
+
+        self.__clean_classes()
+
+    def __rename_python_param_elems(self):
+        methods = self.root.xpath(".//desc[@objtype='method']")
+
+        for method in methods:
+            content = method.find("./desc_content")
+            # ugly_dump(content)
+
+            field_list = content.find("./field_list")
+            if field_list is None:
+                continue
+
+            definition_list = E.definition_list("")
+            for elem in field_list:
+                definition_list.append(deepcopy(elem))
+            content.replace(field_list, definition_list)
 
     def _parse_cpp(self):
         if self.domain != self.DOMAIN_CPP:
@@ -234,7 +316,7 @@ class CodeFile(object):
         namespace_wrappers = self.root.xpath("./desc[@desctype='type']")
         for wrapper in namespace_wrappers:
             namespace_contents = wrapper.xpath(
-                "./desc_signature[./desc_signature_line/target[contains(@ids, 'namespace')]]"
+                "./desc_signature[./target[contains(@ids, 'namespace')]]"
                 "/following-sibling::desc_content[1]/*"
             )
 
@@ -245,7 +327,7 @@ class CodeFile(object):
 
             self.root.remove(wrapper)
 
-        for elem in self.root.xpath(".//desc_signature_line/target"):
+        for elem in self.root.xpath(".//desc_signature/target"):
             return_elem = E.desc_returns(elem.tail.strip())
             parent = elem.find("..")
             parent.replace(elem, return_elem)
@@ -275,30 +357,32 @@ class CodeFile(object):
             self.root.remove(elem)
         self.root.find("./section[@id='exception_classes']").addnext(structs_section)
 
-        # Move classes to a dedicated section
-        classes_section = E.section(id="classes")
-        classes = self.root.xpath("./desc[@objtype='class']")
-        for elem in classes:
-            classes_section.append(deepcopy(elem))
-            self.root.remove(elem)
+        # # Move classes to a dedicated section
+        # classes_section = E.section(id="classes")
+        # classes = self.root.xpath("./desc[@objtype='class']")
+        # for elem in classes:
+        #     classes_section.append(deepcopy(elem))
+        #     self.root.remove(elem)
+        classes_section = self.__arrange_classes()
         self.root.find("./section[@id='structs']").addnext(classes_section)
 
-        ref_xpath = (
-            "./section[@id='classes' or @id='exception_classes']"
-            "//desc_parameterlist/desc_parameter/reference"
-        )
-        for elem in self.root.xpath(ref_xpath):
-            reftitle = elem.get("reftitle", default=elem.text)
-            new_ref = E.desc_type(reftitle)
+        # ref_xpath = (
+        #     "./section[@id='classes' or @id='exception_classes']"
+        #     "//desc_parameterlist/desc_parameter/reference"
+        # )
+        # for elem in self.root.xpath(ref_xpath):
+        #     reftitle = elem.get("reftitle", default=elem.text)
+        #     new_ref = E.desc_type(reftitle)
 
-            new_tail = elem.tail.lstrip()
-            if len(new_tail) < len(elem.tail):
-                new_tail = f" {new_tail}"
-            if len(new_tail := new_tail.rstrip()):
-                new_ref.tail = new_tail
+        #     new_tail = elem.tail.lstrip()
+        #     if len(new_tail) < len(elem.tail):
+        #         new_tail = f" {new_tail}"
+        #     if len(new_tail := new_tail.rstrip()):
+        #         new_ref.tail = new_tail
 
-            parent = elem.find("..")
-            parent.replace(elem, new_ref)
+        #     parent = elem.find("..")
+        #     parent.replace(elem, new_ref)
+        self.__remove_reference_elems()
 
         def add_desc_type(elem, param_type):
             if len(split_type := param_type.split(" ")) > 1:
@@ -337,7 +421,6 @@ class CodeFile(object):
             if elem.find("./*[1]").tag != "desc_annotation":
                 elem.insert(0, E.desc_annotation(""))
 
-        for elem in self.root.xpath(".//desc_parameterlist/desc_parameter"):
             type_elem = elem.find("./desc_type")
             if type_elem.tail is None or not len(type_elem.tail):
                 desc_ref = E.desc_ref("")
@@ -360,7 +443,7 @@ class CodeFile(object):
             elem.replace(old_elem, E.desc_name(old_elem.text))
             # print(ref_elem.tail, ref_elem.getnext())
 
-        ref_xpath = ".//desc[@objtype='function']//desc_signature_line/reference"
+        ref_xpath = ".//desc[@objtype='function']//desc_signature/reference"
         for elem in self.root.xpath(ref_xpath):
             prev_elem = elem.getprevious()
 
@@ -380,6 +463,386 @@ class CodeFile(object):
 
             parent = elem.find("..")
             parent.replace(elem, desc_ref)
+
+        source_file_name_elems = self.root.xpath(
+            ".//desc_content/*[1][name()='emphasis']"
+        )
+        for elem in source_file_name_elems:
+            if elem.text is None:
+                continue
+
+            if elem.text.strip().startswith("#include"):
+                source_file_name = elem.text.strip()
+                source_file_name = source_file_name.removeprefix("#include")
+                source_file_name = source_file_name.replace("&lt;", "")
+                source_file_name = source_file_name.replace("&gt;", "")
+
+                elem.find("..").replace(
+                    elem, E.source_file(source_file_name.strip("<> "))
+                )
+
+        function_sigs = self.root.xpath(
+            ".//desc[@objtype='function']//desc_signature/desc_returns"
+        )
+        for desc_return in function_sigs:
+            if desc_return.getnext().tag != "desc_ref":
+                desc_return.addnext(E.desc_ref(""))
+
+        self.__clean_typedefs()
+        self.__clean_classes()
+
+    def __arrange_classes(self):
+        # Move classes to a dedicated section
+        classes_section = E.section(id="classes")
+        classes = self.root.xpath("./desc[@objtype='class']")
+        for elem in classes:
+            classes_section.append(deepcopy(elem))
+            self.root.remove(elem)
+
+        return classes_section
+
+    def __remove_reference_elems(self):
+        ref_xpath = (
+            "./section[@id='classes' or @id='exception_classes']"
+            "//desc_parameterlist/desc_parameter/reference"
+        )
+        for elem in self.root.xpath(ref_xpath):
+            reftitle = elem.get("reftitle", default=elem.text)
+            new_ref = E.desc_type(reftitle)
+
+            new_tail = elem.tail.lstrip()
+            if len(new_tail) < len(elem.tail):
+                new_tail = f" {new_tail}"
+            if len(new_tail := new_tail.rstrip()):
+                new_ref.tail = new_tail
+
+            parent = elem.find("..")
+            parent.replace(elem, new_ref)
+
+    def __clean_classes(self):
+        exception_classes = self.root.xpath(
+            ".//section[@id='exception_classes' or @id='classes']/desc"
+        )
+        for obj in exception_classes:
+            self.__clean_class_signature(obj.xpath("desc_signature"))
+
+            self.__clean_class_content(obj.xpath("desc_content"))
+
+    def __clean_class_content(self, elem_root):
+        if type(elem_root) is list:
+            for elem in elem_root:
+                self.__clean_class_content(elem)
+            return
+
+        # Extract functions from section containers
+        section_containers = elem_root.xpath(
+            "./container[contains(@classes, 'breathe-sectiondef')]"
+        )
+        for section in section_containers:
+            rubric = section.find("./*[1][@classes='breathe-sectiondef-title']")
+            if rubric is None:
+                continue
+
+            section_name = rubric.text.strip()
+            section.remove(rubric)
+
+            section_index = elem_root.index(section)
+
+            functions = section.xpath("./desc[@objtype='function']")
+            for func in functions:
+                func.set("section-name", section_name)
+
+                elem_root.insert(section_index, deepcopy(func))
+                section_index += 1
+
+            elem_root.remove(section)
+
+        self.__clean_function(
+            elem_root.xpath(".//desc[@objtype='function' or @objtype='method']")
+        )
+
+    def __clean_function(self, elem_root):
+        if type(elem_root) is list:
+            for elem in elem_root:
+                self.__clean_function(elem)
+            return
+
+        content = elem_root.find("./desc_content")
+
+        # Correct a weird issue apparently introduced by Sphinx or Breathe,
+        # where the entire definition list somehow gets embedded in a paragraph.
+        def_list = content.find(".//definition_list")
+        if def_list:
+            new_def_list = content.append(deepcopy(def_list))
+            def_list.find("..").remove(def_list)
+
+        # Extract bullet lists that are nested within paragraphs
+        nested_bullets = content.xpath(".//paragraph/bullet_list")
+        for nested in nested_bullets:
+            parent = nested.find("..")
+            parent.addnext(deepcopy(nested))
+            parent.remove(nested)
+
+        if self.domain == self.DOMAIN_CPP:
+            function_description = content.xpath(
+                "./definition_list/preceding-sibling::*"
+            )
+        else:
+            function_description = content.xpath("./field_list/preceding-sibling::*")
+            # ugly_dump(content)
+            # if (_ := content.find("./field_list")) :
+            #     ugly_dump(_)
+
+        desc = E.func_description("")
+        for elem in function_description:
+            new_elem = deepcopy(elem)
+            # ugly_dump(new_elem)
+
+            if new_elem.text:
+                new_elem.text = new_elem.text.strip()
+            else:
+                new_elem.text = ""
+
+            desc.append(new_elem)
+            content.remove(elem)
+        content.insert(0, desc)
+
+        # self.__rename_python_param_elems()
+
+        if self.domain == self.DOMAIN_CPP:
+            def_list = content.find("./definition_list")
+        else:
+            def_list = content.find("./field_list")
+
+        if def_list is None:
+            def_items = []
+        else:
+            if self.domain == self.DOMAIN_CPP:
+                def_items = def_list.xpath("./definition_list_item")
+            else:
+                def_items = def_list.xpath("./field")
+
+        for item in def_items:
+            if self.domain == self.DOMAIN_CPP:
+                term = item.find("./term")
+            else:
+                term = item.find("./field_name")
+
+            if term.text == "Parameters" or term.text == "Exceptions":
+                if self.domain == self.DOMAIN_CPP:
+                    sub_items = item.xpath("./definition/bullet_list/list_item")
+                else:
+                    sub_items = item.xpath("./field_body/bullet_list/list_item")
+                if sub_items is None:
+                    continue
+
+                new_list = E.definition_list("")
+                new_list.set("content-type", term.text.lower())
+                for _ in sub_items:
+                    new_list.append(deepcopy(_))
+
+                if term.text == "Parameters":
+                    content.insert(1, new_list)
+                else:
+                    content.append(new_list)
+
+                item.find("..").remove(item)
+            elif term.text == "Return":
+                new_item = E.return_value("")
+
+                if self.domain == self.DOMAIN_CPP:
+                    val = item.find("./definition")
+                else:
+                    val = item.find("./field_body")
+
+                new_item.extend(deepcopy(val).getchildren())
+
+                content.append(new_item)
+                item.find("..").remove(item)
+
+        if def_list is not None:
+            content.remove(def_list)
+
+        param_list = content.find("./definition_list[@content-type='parameters']")
+        if param_list is not None:
+            for param in param_list:
+                new_item = E.param("")
+
+                param_values = list(param)  # param.find("./paragraph/literal")
+                # for _ in param_values:
+                #     ugly_dump(_[0])
+                if self.domain == self.DOMAIN_CPP:
+                    param_line = param_values[0].find("./literal")
+                    param_name = param_line.text
+                    param_desc = param_line.tail
+
+                    if param_name:
+                        param_name_elem = E.param_name(param_name.strip())
+                    else:
+                        param_name_elem = E.param_name("")
+
+                    new_item.append(param_name_elem)
+
+                    if param_desc:
+                        param_desc = param_desc.lstrip(":")
+                        param_desc_elem = E.param_desc(E.paragraph(param_desc.strip()))
+                    else:
+                        param_desc_elem = E.param_desc("")
+
+                    if len(param_values) > 1:
+                        param_desc_elem.extend(param_values[1:])
+
+                else:
+                    param_name = param_values[0].find("./literal_strong")
+
+                    if param_name is not None:
+                        param_name_elem = E.param_name(param_name.text.strip())
+                    else:
+                        param_name_elem = E.param_name("")
+
+                    param_type = param_values[0].find("./literal_emphasis")
+                    if param_type is not None:
+                        param_type_elem = E.param_type(param_type.text.strip())
+                    else:
+                        param_type_elem = E.param_type("")
+                        complex_type = param_values[0].xpath(
+                            "./literal[contains(@classes, 'xref')]"
+                        )
+                        full_param_type = ""
+
+                        if complex_type is not None:
+                            for _ in complex_type:
+                                full_param_type = f"{full_param_type}{_.text}"
+                                if _.tail:
+                                    full_param_type = f"{full_param_type}{_.tail}"
+
+                                _.find("..").remove(_)
+
+                            full_param_type = full_param_type.split(" – ")[0]
+                            full_param_type = full_param_type.rstrip(") ")
+
+                            param_type_elem = E.param_type(full_param_type)
+
+                    new_item.append(param_name_elem)
+                    new_item.append(param_type_elem)
+
+                    remaining_text = E.paragraph("")
+                    if param_name is not None:
+                        if len(param_name.tail):
+                            remaining_text.text = param_name.tail
+                        param_values[0].remove(param_name)
+                    if param_type is not None:
+                        if param_type.tail:
+                            remaining_text.text = (
+                                f"{remaining_text.text}{param_type.tail}"
+                            )
+                        param_values[0].remove(param_type)
+
+                    param_desc_elem = deepcopy(param_values[0].find(".."))
+
+                    new_item.append(remaining_text)
+                new_item.append(param_desc_elem)
+                param_list.replace(param, new_item)
+
+        exceptions_list = content.find("./definition_list[@content-type='exceptions']")
+        if exceptions_list is not None:
+            for exc in exceptions_list:
+                new_item = E.exception("")
+
+                exc_values = list(exc)  # param.find("./paragraph/literal")
+                exc_line = exc_values[0].find("./literal")
+                exc_name = exc_line.text.strip()
+                exc_desc = exc_line.tail
+
+                exc_name_elem = E.exception_name(exc_name)
+                new_item.append(exc_name_elem)
+
+                if exc_desc:
+                    exc_desc = exc_desc.lstrip(":")
+                    exc_desc_elem = E.exception_desc(E.paragraph(exc_desc.strip()))
+                else:
+                    exc_desc_elem = E.exc_desc("")
+
+                if len(exc_values) > 1:
+                    exc_desc_elem.extend(exc_values[1:])
+
+                new_item.append(exc_desc_elem)
+
+                exceptions_list.replace(exc, new_item)
+
+        return_value_elem = content.find("./return_value")
+        if return_value_elem is not None:
+            content.append(deepcopy(return_value_elem))
+            content.remove(return_value_elem)
+
+    def __clean_class_signature(self, elem_root):
+        if type(elem_root) is list:
+            for elem in elem_root:
+                self.__clean_class_signature(elem)
+            return
+
+        self.__remove_unneeded_returns(elem_root)
+        self.__fix_elem_spacing(elem_root, ["desc_annotation"])
+
+        parent_class = []
+        if (name_elem := elem_root.find("./desc_name")) is not None:
+            if name_elem.tail and len(name_elem.tail.strip()):
+                if name_elem.tail.strip() != ":":
+                    tail = name_elem.tail.strip()
+                    parent_class = [E.unknown(tail)]
+
+            name_elem.tail = ""
+
+            parent_class.append(name_elem.getnext())
+            while parent_class[-1] is not None:
+                parent_class.append(parent_class[-1].getnext())
+            del parent_class[-1]
+
+            if parent_class and parent_class[0].tag == "desc_annotation":
+                new_parent = E.parent_annotation(parent_class[0].text.strip())
+                parent_name = E.parent_name(parent_class[0].tail.strip())
+
+                elem_root.replace(parent_class[0], new_parent)
+                new_parent.addnext(parent_name)
+
+    def __clean_typedefs(self):
+        typedefs = self.root.xpath(".//section[@id='typedefs']/desc")
+        for obj in typedefs:
+            self.__clean_typedef_signature(obj.xpath("desc_signature"))
+
+    def __clean_typedef_signature(self, elem_root):
+        if type(elem_root) is list:
+            for elem in elem_root:
+                self.__clean_typedef_signature(elem)
+            return
+
+        self.__remove_unneeded_returns(elem_root)
+        self.__fix_elem_spacing(elem_root, "desc_annotation")
+
+        for elem in elem_root.xpath(".//desc_annotation"):
+            if elem.tail:
+                desc_type = E.desc_type(elem.tail.strip())
+                elem.tail = ""
+
+                elem.addnext(desc_type)
+            else:
+                elem.addnext(E.desc_type(""))
+
+    def __remove_unneeded_returns(self, elem_root):
+        # Remove `returns` statement from typedef signatures
+        for elem in elem_root.xpath(".//desc_returns"):
+            elem_root.remove(elem)
+
+    def __fix_elem_spacing(self, elem_root, tags):
+        if type(tags) is list:
+            for tag in tags:
+                self.__fix_elem_spacing(elem_root, tag)
+            return
+
+        tag = f".//{tags}"
+        for elem in elem_root.xpath(tag):
+            if elem.text:
+                elem.text = elem.text.strip()
 
 
 if __name__ == "__main__":
