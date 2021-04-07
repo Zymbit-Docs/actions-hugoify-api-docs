@@ -764,7 +764,8 @@ class CodeFile(object):
         # param_elems = param_values[0]
         # children = param_elems.iterchildren()
         original_copy = deepcopy(param_elems)
-        first_child = next(param_elems.iterchildren())
+        children = param_elems.iterchildren()
+        first_child = next(children)
 
         param_name_elem = E.param_name("")
         param_name_elem.text = first_child.text.strip()
@@ -786,7 +787,6 @@ class CodeFile(object):
         # element to the tree and add the tail of the parameter name
         # element's tail.
         if first_elem_tail != " (":
-            ugly_dump(first_child)
             new_item.append(param_type_elem)
 
             param_description = first_elem_tail.lstrip(" –")
@@ -840,11 +840,6 @@ class CodeFile(object):
                     param_desc_elem.text = param_desc_elem.text.strip(" –")
                     param_desc_elem.text = param_desc_elem.text.strip()
 
-                # print(selected_type_text)
-                # last_child = next(
-                #     param_elems.iterchildren(reversed=True)
-                # )
-
             # if len(param_elems) > 1:
             #     print(list(param_elems))
             #     ugly_dump(param_elems)
@@ -855,55 +850,6 @@ class CodeFile(object):
             for _ in remaining_elems:
                 param_desc_elem.append(deepcopy(_))
                 param_elems.remove(_)
-            # # Check to see if there are top-level <paragraph> elements
-            # # within the description. If there are, we want to pull
-            # # those out separately.
-            # desc_paragraphs = param_elems.xpath("./paragraph")
-            # if desc_paragraphs:
-            #     # param_desc_elem = E.param_desc("")
-            #     for _ in desc_paragraphs:
-            #         param_desc_elem.append(deepcopy(_))
-            #         param_elems.remove(_)
-
-            # # If the parameter description isn't organized into paragraphs
-            # # we must be more granular.
-            # else:
-            # type_literals = param_elems.xpath(
-            #     "./literal[contains(@classes, 'xref')]"
-            # )
-
-            # if len(type_literals) == 1:
-            #     # ugly_dump(param_elems)
-            #     param_type_elem.text = type_literals[0].text.strip()
-
-            #     if type_literals[0].tail:
-            #         param_desc_elem.text = type_literals[0].tail
-
-            #     param_elems.remove(type_literals[0])
-
-            # else:
-            #     # ugly_dump(param_elems)
-            #     type_text = []
-            #     for _ in type_literals:
-            #         if _.text:
-            #             type_text.append(_.text)
-            #         if _.tail:
-            #             type_text.append(_.tail)
-
-            #         param_elems.remove(_)
-
-            #     selected_type_text = "".join(type_text)
-            #     selected_type_text = selected_type_text.split(" – ")[0]
-            #     selected_type_text = selected_type_text.rstrip(" )")
-            #     param_type_elem.text = selected_type_text
-            #     # last_child = next(
-            #     #     param_elems.iterchildren(reversed=True)
-            #     # )
-
-            # remaining_elems = list(param_elems)
-            # for _ in remaining_elems:
-            #     param_desc_elem.append(deepcopy(_))
-            #     param_elems.remove(_)
 
         if tail_elems:
             for _ in tail_elems:
@@ -921,40 +867,6 @@ class CodeFile(object):
         # ugly_dump(new_item)
 
         return new_item
-
-        # If the last tag within the param content is a literal
-        # then we can just grab the tail as our description.
-        # if last_child.tag == "literal" and last_child.tail:
-        #     param_description = last_child.tail
-        #     param_description = param_description.lstrip(" –")
-        #     param_description = param_description.strip()
-
-        #     fixed_newlines = []
-        #     for line in param_description.split("\n"):
-        #         fixed_newlines.append(line.strip())
-
-        #     param_desc_elem.text = " ".join(fixed_newlines)
-        #     last_child.tail = ""
-        # else:
-        # type_literals = param_elems.xpath(
-        #     "./literal[contains(@classes, 'xref')]"
-        # )
-
-        # type_text = []
-        # for _ in type_literals:
-        #     if _.text:
-        #         type_text.append(_.text)
-        #     if _.tail:
-        #         type_text.append(_.tail)
-
-        #     param_elems.remove(_)
-
-        # selected_type_text = "".join(type_text)
-        # selected_type_text = selected_type_text.split(
-        #     " – "
-        # )[0]
-        # selected_type_text = selected_type_text.rstrip(" )")
-        # param_type_elem.text = selected_type_text
 
     def __clean_class_signature(self, elem_root):
         if type(elem_root) is list:
