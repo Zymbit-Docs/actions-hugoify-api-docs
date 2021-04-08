@@ -153,7 +153,7 @@ class CodeFile(object):
         elif self.domain == self.DOMAIN_PY:
             self._parse_py()
 
-        # self.tidy_tree()
+        self.tidy_tree()
 
     def preparser_format(self):
         for elem in self.root.xpath(".//paragraph"):
@@ -259,6 +259,9 @@ class CodeFile(object):
                 if not elem.tail or len(elem.tail.strip()) == 0:
                     if len(list(elem)) == 0:
                         elem.find("..").remove(elem)
+                continue
+
+            if len(elem) and elem.text[-1] == " ":
                 continue
 
             elem.text = elem.text.strip()
