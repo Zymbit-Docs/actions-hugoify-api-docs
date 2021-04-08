@@ -588,7 +588,7 @@ class CodeFile(object):
 
         # Correct a weird issue apparently introduced by Sphinx or Breathe,
         # where the entire definition list somehow gets embedded in a paragraph.
-        def_list = content.find(".//definition_list")
+        def_list = content.find("./paragraph/definition_list")
         if def_list:
             new_def_list = content.append(deepcopy(def_list))
             def_list.find("..").remove(def_list)
