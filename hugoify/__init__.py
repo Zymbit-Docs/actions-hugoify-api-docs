@@ -772,15 +772,6 @@ class CodeFile(object):
             content.remove(return_value_elem)
 
     def __process_python_methods(self, new_item, param_elems, tail_elems: list = None):
-        # if tail_elems:
-        #     for _ in tail_elems:
-        #         ugly_dump(_)
-        # for _ in param_elems:
-        #     print(_.tag, " / ", end="")
-        # print()
-        # param_elems = param_values[0]
-        # children = param_elems.iterchildren()
-        original_copy = deepcopy(param_elems)
         children = param_elems.iterchildren()
         first_child = next(children)
 
@@ -791,7 +782,6 @@ class CodeFile(object):
 
         param_type_elem = E.param_type("")
         param_desc_elem = E.param_desc("")
-        # if first_child.tail:
 
         if not first_child.tail:
             print("NO TAIL!:")
@@ -834,7 +824,6 @@ class CodeFile(object):
                 param_elems.remove(type_literals[0])
 
             else:
-                # ugly_dump(param_elems)
                 type_text = []
                 for _ in type_literals:
                     if _.text:
@@ -857,13 +846,7 @@ class CodeFile(object):
                     param_desc_elem.text = param_desc_elem.text.strip(" –")
                     param_desc_elem.text = param_desc_elem.text.strip()
 
-            # if len(param_elems) > 1:
-            #     print(list(param_elems))
-            #     ugly_dump(param_elems)
-
             remaining_elems = list(param_elems)
-            # if remaining_elems:
-            #     ugly_dump(param_elems)
             for _ in remaining_elems:
                 param_desc_elem.append(deepcopy(_))
                 param_elems.remove(_)
@@ -877,11 +860,6 @@ class CodeFile(object):
             new_item.append(param_type_elem)
         if param_desc_elem is not None:
             new_item.append(param_desc_elem)
-
-        # print("\n==================================\nOriginal:\n")
-        # ugly_dump(original_copy)
-        # print("\n----------------------------------\nModified:\n")
-        # ugly_dump(new_item)
 
         return new_item
 
