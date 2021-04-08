@@ -31,6 +31,23 @@ def ugly_dump(tree, count=1000):
     print("✖✖✖")
 
 
+def ugly_dump_if_contains(tree, contains, count=1000):
+
+    if tree is None:
+        return
+
+    dumped = etree.tostring(
+        tree,
+        encoding="utf-8",
+        pretty_print=False,
+    ).decode("utf-8")
+
+    if dumped.find(contains) > -1:
+        print("↓↓↓↓↓↓↓↓↓↓↓")
+        print(dumped, end="")
+        print("✖✖✖")
+
+
 def main():
     input_dir = Path(os.environ["INPUT_RAWPATH"])
     output_dir = Path(os.environ["INPUT_OUTPUTPATH"])
