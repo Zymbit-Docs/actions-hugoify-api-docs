@@ -645,20 +645,27 @@ class CodeFile(object):
             else:
                 term = item.find("./field_name")
 
-            if term.text == "Parameters" or term.text == "Exceptions":
+            if term.text in ("Parameters", "Exceptions", "Raises"):
                 if self.domain == self.DOMAIN_CPP:
                     sub_items = item.xpath("./definition/bullet_list/list_item")
                 else:
                     sub_items = item.xpath("./field_body/bullet_list/list_item")
+                    if len(sub_items) == 0:
+                        sub_items = item.xpath("./field_body")
                 if sub_items is None:
                     continue
 
                 new_list = E.definition_list("")
-                new_list.set("content-type", term.text.lower())
+                content_type_term = term.text.lower()
+                if content_type_term == "raises":
+                    content_type_term = "exceptions"
+                new_list.set("content-type", content_type_term)
                 for _ in sub_items:
+                    # if content_type_term == "exceptions":
+                    #     ugly_dump(_)
                     new_list.append(deepcopy(_))
 
-                if term.text == "Parameters":
+                if content_type_term == "parameters":
                     content.insert(1, new_list)
                 else:
                     content.append(new_list)
@@ -681,8 +688,6 @@ class CodeFile(object):
             content.remove(def_list)
 
         if self.domain == self.DOMAIN_PY:
-            # if (elem := content.find(".//definition_list")) :
-            #     ugly_dump(elem)
             literal_emph = content.xpath(
                 ".//definition_list//list_item//literal_emphasis"
             )
@@ -695,13 +700,9 @@ class CodeFile(object):
         param = None
         if param_list is not None:
             for param in param_list:
-                param_copy = deepcopy(param)
-                # ugly_dump(param)
                 new_item = E.param("")
 
-                param_values = list(param)  # param.find("./paragraph/literal")
-                # for _ in param_values:
-                #     ugly_dump(_[0])
+                param_values = list(param)
                 if self.domain == self.DOMAIN_CPP:
                     param_line = param_values[0].find("./literal")
                     param_name = param_line.text
@@ -724,40 +725,52 @@ class CodeFile(object):
                         param_desc_elem.extend(param_values[1:])
 
                 else:
-                    # ugly_dump(param_values[0], count=10000)
                     new_item = self.__process_python_methods(
                         new_item,
                         param_values[0],
                         param_values[1:],
                     )
 
-                    # new_item.append(param_desc_elem)
-                    # param_list.replace(param, new_item)
-                    # print("\n==================================\nOriginal:\n")
-                    # ugly_dump(param_copy)
-                    # print("\n----------------------------------\nModified:\n")
-                    # ugly_dump(new_item)
-                content.append(new_item)
-                # param_list.append(E.DIVIDER())
+                param_list.replace(param, deepcopy(new_item))
 
         exceptions_list = content.find("./definition_list[@content-type='exceptions']")
+        # if exceptions_list:
+        #     ugly_dump(exceptions_list)
         if exceptions_list is not None:
             for exc in exceptions_list:
                 new_item = E.exception("")
 
-                exc_values = list(exc)  # param.find("./paragraph/literal")
-                exc_line = exc_values[0].find("./literal")
-                exc_name = exc_line.text.strip()
-                exc_desc = exc_line.tail
+                exc_values = list(exc)
+                exc_line = None
+                if self.domain == self.DOMAIN_CPP:
+                    exc_line = exc_values[0].find("./literal")
+                    exc_name = exc_line.text.strip()
+                    exc_desc = exc_line.tail
+                else:
+                    exc_line = exc_values[0].xpath(
+                        "./*[starts-with(name(), 'literal')]"
+                    )[0]
+                    exc_name = exc_line.text.strip()
+
+                    if exc_line.tail:
+                        exc_desc = exc_line.tail.lstrip(" –")
+
+                if exc_line is not None:
+                    exc_line.find("..").remove(exc_line)
 
                 exc_name_elem = E.exception_name(exc_name)
                 new_item.append(exc_name_elem)
 
                 if exc_desc:
                     exc_desc = exc_desc.lstrip(":")
-                    exc_desc_elem = E.exception_desc(E.paragraph(exc_desc.strip()))
+                    exc_desc_elem = E.exception_desc(exc_desc.strip())
                 else:
-                    exc_desc_elem = E.exc_desc("")
+                    exc_desc_elem = E.exception_desc("")
+
+                if len(exc_values[0]):
+                    for _ in exc_values[0]:
+                        exc_desc_elem.append(deepcopy(_))
+                        _.find("..").remove(_)
 
                 if len(exc_values) > 1:
                     exc_desc_elem.extend(exc_values[1:])
@@ -804,6 +817,10 @@ class CodeFile(object):
                 fixed_newlines.append(line.strip())
 
             param_desc_elem.text = " ".join(fixed_newlines)
+
+            while (next_elem := next(children, None)) is not None:
+                param_desc_elem.append(deepcopy(next_elem))
+                next_elem.find("..").remove(next_elem)
 
         # If the tail is " (", then it means that a type is specified.
         # We have to consider a few things about how we process this.
