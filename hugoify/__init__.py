@@ -7,45 +7,12 @@ from lxml import etree
 from lxml.builder import E
 
 from .utils import generate_frontmatter
+from .utils import partial_dump, ugly_dump, ugly_dump_if_contains
 
 from pprint import pprint
 
-
-def partial_dump(tree, count=500):
-    print(
-        etree.tostring(tree, encoding="utf-8", pretty_print=True,).decode(
-            "utf-8"
-        )[:count],
-        end="",
-    )
-
-
-def ugly_dump(tree, count=1000):
-    print("↓↓↓↓↓↓↓↓↓↓↓")
-    print(
-        etree.tostring(tree, encoding="utf-8", pretty_print=False,).decode(
-            "utf-8"
-        )[:count],
-        end="",
-    )
-    print("✖✖✖")
-
-
-def ugly_dump_if_contains(tree, contains, count=1000):
-
-    if tree is None:
-        return
-
-    dumped = etree.tostring(
-        tree,
-        encoding="utf-8",
-        pretty_print=False,
-    ).decode("utf-8")
-
-    if dumped.find(contains) > -1:
-        print("↓↓↓↓↓↓↓↓↓↓↓")
-        print(dumped, end="")
-        print("✖✖✖")
+from .xslt import xslt
+from .htmlify import htmlify
 
 
 def main():
@@ -85,6 +52,20 @@ def main():
 
         with output_xml.open("w") as fp:
             doc = E.document()
+
+            if contents.domain == CodeFile.DOMAIN_PY:
+                doc.set("api-lang", "python")
+                doc.set("title", "Python API Documentation")
+            elif contents.domain == CodeFile.DOMAIN_CPP:
+                doc.set("api-lang", "cpp")
+                doc.set("title", "C++ API Documentation")
+            elif contents.domain == CodeFile.DOMAIN_C:
+                doc.set("api-lang", "c")
+                doc.set("title", "C API Documentation")
+
+            title_element = E.document_title(doc.get("title"))
+            doc.append(title_element)
+
             doc.extend(root.find("./section").getchildren())
             etree.indent(doc, space="    ", level=0)
             fp.write(etree.tostring(doc, encoding="unicode"))
@@ -311,6 +292,40 @@ class CodeFile(object):
             parent.replace(elem, new_elem)
 
         self.__clean_classes()
+        self.__remove_unneeded_attrs()
+        self.unnest_xpath(".//return_value", "./paragraph")
+
+    def unnest_xpath(self, outer_xpath, inner_xpath):
+        outer_elems = self.root.xpath(outer_xpath)
+        for outer_elem in outer_elems:
+            original_copy = deepcopy(outer_elem)
+            if outer_elem.text:
+                outer_text = [outer_elem.text]
+            else:
+                outer_text = []
+
+            inner_elems = outer_elem.xpath(inner_xpath)
+            for elem in inner_elems:
+                if elem.text:
+                    outer_text.append(elem.text)
+                    elem.text = ""
+
+            outer_elem.text = "".join(outer_text)
+
+            outer_elem.addnext(original_copy)
+
+    def __remove_unneeded_attrs(self):
+        attrs = self.root.xpath(
+            ".//desc["
+            "@domain='py' and "
+            "@objtype='attribute' and "
+            "./desc_signature/desc_name["
+            "text()='__dict__' or text()='__weakref__' or text()='__module__'"
+            "]]"
+        )
+
+        for attr in attrs:
+            attr.find("..").remove(attr)
 
     def __rename_python_param_elems(self):
         methods = self.root.xpath(".//desc[@objtype='method']")
@@ -674,8 +689,8 @@ class CodeFile(object):
                     content.append(new_list)
 
                 item.find("..").remove(item)
-            elif term.text == "Return":
-                new_item = E.return_value("")
+            elif term.text == "Return" or term.text == "Returns":
+                new_item = E.return_value("Here's some test intro text! ")
 
                 if self.domain == self.DOMAIN_CPP:
                     val = item.find("./definition")
@@ -684,8 +699,21 @@ class CodeFile(object):
 
                 new_item.extend(deepcopy(val).getchildren())
 
+                new_item[-1].tail = " And here's some follower text!"
+
                 content.append(new_item)
                 item.find("..").remove(item)
+
+            elif term.text == "Return type":
+                if self.domain == self.DOMAIN_PY:
+                    new_item = E.return_type("")
+
+                    val = item.find("./field_body")
+
+                    new_item.extend(deepcopy(val).getchildren())
+
+                    content.append(new_item)
+                    item.find("..").remove(item)
 
         if def_list is not None:
             content.remove(def_list)
