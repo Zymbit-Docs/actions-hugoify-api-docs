@@ -95,9 +95,11 @@ def partial_dump(tree, count=1000):
 def ugly_dump(tree, count=1000):
     print("↓↓↓↓↓↓↓↓↓↓↓")
     print(
-        etree.tostring(_reserialize, encoding="utf-8", pretty_print=False,).decode(
-            "utf-8"
-        )[:count],
+        etree.tostring(
+            _reserialize(tree),
+            encoding="utf-8",
+            pretty_print=False,
+        ).decode("utf-8")[:count],
         end="",
     )
     print("✖✖✖")
@@ -106,7 +108,7 @@ def ugly_dump(tree, count=1000):
 def ugly_dump_if_contains(tree, contains, count=1000):
 
     if tree is None:
-        return
+        return None
 
     dumped = etree.tostring(
         tree,
@@ -118,3 +120,5 @@ def ugly_dump_if_contains(tree, contains, count=1000):
         print("↓↓↓↓↓↓↓↓↓↓↓")
         print(dumped, end="")
         print("✖✖✖")
+
+        return dumped

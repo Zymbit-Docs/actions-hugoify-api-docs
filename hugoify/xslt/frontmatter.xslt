@@ -18,7 +18,7 @@ images: []
 type: docs
 layout: single
 weight: 0
-toc: true
+toc: false
 ---
 
 </xsl:template>

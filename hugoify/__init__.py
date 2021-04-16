@@ -77,7 +77,7 @@ def main():
 
 
 def extract_text(elem):
-    return str(elem.text).strip()
+    return str(elem.text).lstrip()
 
 
 class CodeFile(object):
@@ -145,6 +145,22 @@ class CodeFile(object):
             new_text = " ".join([_.strip() for _ in lines])
 
             elem.text = new_text
+
+        for elem in self.root.xpath(
+            ".//desc[@objtype='method']/desc_content/field_list/field[./field_name[text()='Parameters']]/field_body"
+        ):
+            if (p := elem.xpath("./paragraph")) :
+                if len(p) != 1:
+                    raise RuntimeError("Unknown parsing condition!")
+
+                new_elem = E.bullet_list(E.list_item(deepcopy(p[0])))
+                # new_elem.append(deepcopy(p[0]))
+
+                elem.remove(p[0])
+
+                elem.append(new_elem)
+
+                # ugly_dump(elem)
 
     def generate_frontmatter(self):
         title_elem = self.root.find("./title")
@@ -222,6 +238,21 @@ class CodeFile(object):
                 continue
             if elem.tail and len(elem.tail.strip()):
                 continue
+            if len(elem) == 1:
+                only_child = elem.find("./*")
+
+                if only_child.text or len(only_child):
+                    if only_child.tail and not only_child.tail.isspace():
+                        continue
+            elif len(elem) > 1:
+                for child in elem.xpath("./*"):
+                    if child.tag not in {"strong", "title_reference"}:
+                        break
+                else:
+                    continue
+
+                # print("Not skipping for:")
+                # ugly_dump(elem)
 
             children = [deepcopy(_) for _ in elem.getchildren()]
             if not len(children):
@@ -256,6 +287,19 @@ class CodeFile(object):
 
             if final_char not in "!.?:,":
                 elem.text = f"{elem.text}."
+
+        for elem in self.root.xpath("//title_reference"):
+            if (prev_sibling := elem.getprevious()) is not None:
+                if not prev_sibling.tail:
+                    prev_sibling.tail = " "
+                else:
+                    prev_sibling.tail += " "
+            else:
+                parent = elem.getparent()
+                if not parent.text:
+                    parent.text = " "
+                else:
+                    parent.text += " "
 
     def _parse_py(self):
         if self.domain != self.DOMAIN_PY:
@@ -596,11 +640,37 @@ class CodeFile(object):
             elem_root.xpath(".//desc[@objtype='function' or @objtype='method']")
         )
 
+    def debugging(self, elem_root):
+        if self.domain == self.DOMAIN_PY:
+            text_xml = "test_file3.xml"
+
+            if not self.WRITE_VAR:
+                w = "w"
+                self.WRITE_VAR = True
+            else:
+                w = "a"
+            with open(text_xml, w) as fp:
+                doc = E.document()
+
+                if self.domain == self.DOMAIN_PY:
+                    doc.set("api-lang", "python")
+                    doc.set("title", "Python API Documentation")
+
+                title_element = E.document_title(doc.get("title"))
+                doc.append(title_element)
+
+                doc.extend(deepcopy(elem_root))
+                etree.indent(doc, space="    ", level=0)
+                fp.write(etree.tostring(doc, encoding="unicode"))
+                fp.write("\n")
+
     def __clean_function(self, elem_root):
         if type(elem_root) is list:
             for elem in elem_root:
                 self.__clean_function(elem)
             return
+
+        self.debugging(elem_root)
 
         content = elem_root.find("./desc_content")
 
@@ -644,10 +714,12 @@ class CodeFile(object):
 
         # self.__rename_python_param_elems()
 
+        # failing_node = False
         if self.domain == self.DOMAIN_CPP:
             def_list = content.find("./definition_list")
         else:
             def_list = content.find("./field_list")
+            # failing_node = ugly_dump_if_contains(def_list, "ERRORY")
 
         if def_list is None:
             def_items = []
@@ -670,6 +742,7 @@ class CodeFile(object):
                     sub_items = item.xpath("./field_body/bullet_list/list_item")
                     if len(sub_items) == 0:
                         sub_items = item.xpath("./field_body")
+                        # [ugly_dump(_) for _ in sub_items]
                 if sub_items is None:
                     continue
 
@@ -679,8 +752,6 @@ class CodeFile(object):
                     content_type_term = "exceptions"
                 new_list.set("content-type", content_type_term)
                 for _ in sub_items:
-                    # if content_type_term == "exceptions":
-                    #     ugly_dump(_)
                     new_list.append(deepcopy(_))
 
                 if content_type_term == "parameters":
@@ -724,6 +795,7 @@ class CodeFile(object):
             )
 
             for elem in literal_emph:
+                # ugly_dump(elem)
                 elem.tag = "literal"
                 elem.set("classes", "xref")
 
@@ -814,6 +886,8 @@ class CodeFile(object):
         if return_value_elem is not None:
             content.append(deepcopy(return_value_elem))
             content.remove(return_value_elem)
+
+    WRITE_VAR = False
 
     def __process_python_methods(self, new_item, param_elems, tail_elems: list = None):
         children = param_elems.iterchildren()

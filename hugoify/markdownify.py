@@ -1,422 +1,340 @@
-#!/usr/bin/env python3
 import os, sys
 from pathlib import Path
-from lxml import html, etree
-from lxml.html import builder as E
-import re
-import io
-from datetime import datetime
+from lxml import etree
+from lxml.builder import E
+
 from copy import deepcopy
-
-from typing import List, Any
-
-# import frontmatter
-from ruamel.yaml import YAML
-from ruamel.yaml.compat import StringIO
 
 from pprint import pprint
 
+from .utils import partial_dump, ugly_dump, verbose_dump, unserialize, _reserialize
 
-class Frontmatter:
-    def __init__(self, **kw):
-        self.yaml = YAML()
-        self.yaml.explicit_start = True
-        self.yaml.width = 4096
-        self.yaml.indent(mapping=4, sequence=2, offset=4)
+from typing import Union, List
+from contextlib import contextmanager
+from collections.abc import MutableMapping
+from .parser import DocPath, Node, TextNode
 
-    def dump_metadata(self, data, stream=None, **kw):
-        inefficient = False
+# if not sys.warnoptions:
+#     import warnings
 
-        if stream is None:
-            inefficient = True
-            stream = StringIO()
+#     warnings.simplefilter("once")
 
-        self.yaml.dump(data, stream, **kw)
+import warnings
 
-        stream.write("---\n")
-        if inefficient:
-            return stream.getvalue()
+warnings.filterwarnings("once", category=RuntimeWarning)
+
+PWD = (Path(__file__).resolve()).parent
 
 
-frontmatter_generator = Frontmatter(typ="safe")
+class NotImplementedWarning(UserWarning):
+    def __init__(self, message):
+        self.mesage = message
 
 
-def main():
+def get_abs(relative):
+    return str(PWD / relative)
+
+
+def htmlify():
     input_dir = Path(os.environ["INPUT_RAWPATH"])
     output_dir = Path(os.environ["INPUT_OUTPUTPATH"])
 
-    print(input_dir)
-
-    if not input_dir.exists():
+    if not output_dir.exists():
         print("Exiting because there are no files to process...")
         sys.exit(0)
-        return
 
-    output_log = []
-    for f in input_dir.glob("*.html"):
-        print(f"Processing {str(f)}...")
-        frontmatter, parsed = parse_file(f)
+    # for f in output_dir.glob("python_docs.xml"):
+    for f in ("python_docs.xml", "cpp_docs.xml"):
+        f = output_dir / f
 
-        output_html = f.parents[1] / "output" / f"{f.stem}.html"
-
-        with output_html.open("w") as fp:
-            fp.write(f"<pre>{frontmatter}</pre>\n\n")
-            for elem in parsed:
-                if elem.get("class") == "parsed-section":
-                    dump_markdown(fp, elem)
-                else:
-                    etree.indent(elem, space="  ", level=0)
-                    fp.write(etree.tostring(elem, encoding="unicode"))
-                    fp.write("\n")
-
-        output_md = f.parents[1] / "output" / f"{f.stem}.md"
-        with output_md.open("w") as fp:
-            fp.write(f"{frontmatter}\n")
-            for elem in parsed:
-                if elem.get("class") == "parsed-section":
-                    dump_markdown(fp, elem)
-                else:
-                    etree.indent(elem, space="  ", level=0)
-                    fp.write(etree.tostring(elem, encoding="unicode"))
-                    fp.write("\n")
-
-        print()
-
-    sys.exit(0)
+        renderer = Renderer(f, output_dir)
 
 
-def dump_markdown(fp, root: html.HtmlElement, level: int = 0):
-    for elem in root:
-        if type(elem) is html.HtmlComment:
-            fp.write(etree.tostring(elem, encoding="unicode", pretty_print=True))
-            fp.write("\n")
-        else:
-            etree.indent(elem, space="  ", level=level)
-            fp.write(etree.tostring(elem, encoding="unicode", pretty_print=True))
+class Renderer:
+    def __init__(self, input_file, output_dir):
+        print(f"Processing {str(input_file)}...")
 
+        # self.current_path = []
 
-def parse_element(elem: html.HtmlElement):
-    if elem.tag == "p":
-        return f"{elem.text_content()}\n\n"
-    else:
-        return etree.tostring(elem, encoding="unicode", pretty_print=True)
+        self.input_file = input_file.resolve()
 
+        self.rendered_file = output_dir / f"{self.input_file.stem}.md"
+        # self.rendered_lines = []
+        self.rendered_trees = []
 
-def parse_file(fp: Path):
-    with fp.open("r") as f:
-        html_root = html.parse(f)
-
-    comments = html_root.xpath("//comment()")
-    lang = ""
-    for c in comments:
-        comment = str(c)
-        if comment.find("API:") == -1:
-            continue
-
-        match = re.fullmatch(
-            r"<!--\s*API:\s*(?P<lang>[a-z]+)\s*-->", comment, flags=re.IGNORECASE
+        tree = etree.parse(
+            str(self.input_file),
+            parser=etree.XMLParser(load_dtd=True, no_network=False, recover=True),
         )
-        if match:
-            lang = match.groupdict()["lang"]
-            break
-
-    print(f"Processing as language: {lang}")
-
-    body = html_root.getroot().xpath("//body")[0]
-
-    drop_helper_sections(body)
-    drop_unwanted_sections(body)
-    reformat_elements(body)
-    body = get_doc_body(body)
+        self.document_root = _reserialize(tree.getroot())
+
+        self.parse_section(self.document_root.xpath("./section"))
+
+        with self.rendered_file.open("w") as fp:
+            for block in self.rendered_trees:
+                etree.indent(block, space="  ", level=0)
+                text = etree.fromstring(block, parser=etree.XMLParser(recover=True))
+                fp.write(text)
+                fp.write("\n")
+
+    # def add_lines(self, line_or_lines: Union[str, List[str]], newlines: int = 2):
+    #     if line_or_lines is None:
+    #         pass
+    #     elif type(line_or_lines) is TextNode:
+    #         self.__add_line(line_or_lines.text, line_or_lines._newlines)
+    #     elif type(line_or_lines) is list:
+    #         self.__add_lines(line_or_lines, newlines)
+    #     elif type(line_or_lines) is str:
+    #         self.__add_line(line_or_lines, newlines)
+    #     elif type(line_or_lines) is tuple:
+    #         self.__add_line(line_or_lines)
+    #     else:
+    #         raise TypeError(
+    #             f"Invalid type: {type(line_or_lines)}. Must past string or list of strings to this method."
+    #         )
+
+    # def __add_line(self, line: str, newlines: int = 2):
+    #     if type(line) is tuple:
+    #         self.rendered_lines.append(line)
+    #     elif type(line) is str:
+    #         self.rendered_lines.append((line, newlines))
+    #     else:
+    #         raise TypeError(f"Invalid type passed to __add_line: {type(line)}.")
+    #     # else:
+    #     #     # self.rendered_lines.append((line.strip(), newlines))
+
+    # def __add_lines(self, lines: List[str], newlines: int = 2):
+    #     for line in lines:
+    #         self.__add_line(line, newlines)
+
+    def parse_section(self, root):
+        if type(root) is list:
+            for elem in root:
+                self.parse_section(elem)
+
+            return
+
+        section_id = root.get("id")
+        if section_id == "abstract":
+            section_title = "Introduction"
+        elif section_id == "classes":
+            section_title = "Classes"
+        else:
+            section_title = False
+            return
+
+        # self.add_lines(f"## {section_title}", newlines=2)
+        node = E.div()
+        title_node = E.h2(section_title)
+
+        node.append(title_node)
+
+        with DocPath(f"section-{section_id}") as d:
+            for child in root:
+                self.parse_tree(node, child, context=d)
+
+    def parse_tree(self, parent, node, subfunction: str = None, **kwargs):
+        tag = node.tag
+
+        if subfunction is not None:
+            tag = f"{tag}_{subfunction}"
+
+        if node.tail and not node.tail.isspace():
+            warnings.warn(
+                (
+                    f"The element {tag} contains a tail. No elements should have tails.\n"
+                    f"\tBase: {node.base}\n"
+                    f"\tLine: {node.sourceline}\n"
+                    f"\tTail text:\n\t\t{node.tail}"
+                ),
+                category=RuntimeWarning,
+            )
+
+        func_name = f"_parse_node_{tag}"
+        parse_func = self.__get_parse_func(func_name)
+        children = parse_func(node, **kwargs)
+
+        parent.extend(children)
+
+    # def parse_node(self, node, newlines: int = None, **kwargs):
+    #     self.add_lines(self.get_node(node, newlines, **kwargs))
+
+    # def parse_content(self, node, **kwargs):
+    #     # print(f"{node}: ", end="")
+    #     # print("Parsing:", node)
+    #     if len(node) == 0:
+    #         if node.text:
+    #             new_node = TextNode(node.text)
+    #         else:
+    #             new_node = TextNode("")
+    #     else:
+    #         node_text = ""
+    #         node_tail = ""
+    #         new_node = []
+    #         if node.text:
+    #             node_text = node.text
 
-    revised_tree = E.DIV(id="docs-page")
-
-    frontmatter = generate_frontmatter(body)
-    fix_wrapping(body)
-    get_preamble(body)
-    # revised_tree.append(get_preamble(body))
+    #         for sub_item in node:
+    #             tag = sub_item.tag
+    #             func_name = f"_parse_content_{tag}"
+    #             parse_func = self.__get_parse_func(func_name)
 
-    if lang == "c":
-        parse_c_style(body)
-        parse_c(body)
-    elif lang == "cpp":
-        parse_c_style(body)
-        parse_cpp(body)
-    elif lang == "py":
-        parse_py(body)
+    #             new_node.append(parse_func(sub_item, **kwargs))
 
-    for elem in body:
-        revised_tree.append(elem)
+    #         if node.tail:
+    #             node_tail = node.tail.strip()
 
-    return frontmatter, revised_tree
+    #     return new_node
 
+    def __get_parse_func(self, func_name):
+        parse_func = getattr(self, func_name, None)
 
-def parse_subsection(
-    body_tree: html.HtmlElement,
-    elems_xpath: str,
-    drop_xpath: str = None,
-):
-    elems: html.HtmlElement = []
-    for match in body_tree.xpath(elems_xpath):
-        elems.append(deepcopy(match))
-        match.drop_tree()
+        if parse_func is not None:
+            return parse_func
 
-    if elems and drop_xpath is not None:
-        for drop_elem in body_tree.xpath(drop_xpath):
-            drop_elem.drop_tree()
+        warnings.warn(NotImplementedWarning(f"{func_name}"))
 
-    return elems
+        if func_name.startswith("_parse_content_"):
+            return lambda *args, **kwargs: ""
+        else:
+            return lambda *args, **kwargs: None
 
+    def __not_implemented_warning(self, node, **kwargs):
+        print(f"A parsing method has not been implemented for the {node.tag} element.")
 
-def parse_c_style(body_tree: html.HtmlElement):
-    # Create an array of typedefs
-    typedefs: html.HtmlElement = parse_subsection(
-        body_tree,
-        ".//div[./p[text()='Typedefs']]/dl",
-        ".//div[./p[text()='Typedefs']]",
-    )
+    # def __serialize_html(self, node, **kwargs):
+    #     new_tree = deepcopy(node)
+    #     serialized = etree.tostring(new_tree, encoding="utf-8").decode("utf-8")
 
-    # Create an array of enums
-    enums: html.HtmlElement = parse_subsection(
-        body_tree,
-        ".//div[./p[text()='Enums']]/dl",
-        ".//div[./p[text()='Enums']]",
-    )
-
-    # Create an array of defines
-    defines: html.HtmlElement = parse_subsection(
-        body_tree,
-        ".//div[./p[text()='Defines']]/dl",
-        ".//div[./p[text()='Defines']]",
-    )
-
-    structs: html.HtmlElement = parse_subsection(
-        body_tree,
-        "./dl[@class='cpp struct']",
-    )
-
-
-def parse_c(body_tree: html.HtmlElement):
-    functions: dict[str, List[html.HtmlElement]] = {}
-
-    contextdiv_xpath = ".//div[./dl[@class='cpp function'] and ./p[contains(@class, 'breathe-sectiondef-title')]]"
-    for match in body_tree.xpath(contextdiv_xpath):
-        section_name = match.find("./p").text_content()
-        if not functions.get(section_name):
-            functions[section_name] = []
-
-        functions[section_name] += [
-            _ for _ in match.xpath("./dl[@class='cpp function']")
-        ]
-        match.drop_tree()
-
-    pprint(functions)
-
+    #     return serialized
 
-def parse_cpp(body_tree: html.HtmlElement):
-
-    # Create an array of exception definitions
-    exceptions: html.HtmlElement = parse_subsection(
-        body_tree,
-        ".//dl[@class='cpp class' and ./dt[contains(text(), 'std::exception')]]",
-        ".//div[./p[text()='Defines']]",
-    )
-
-    classes: html.HtmlElement = parse_subsection(
-        body_tree,
-        "./dl[@class='cpp class']",
-    )
-
-
-def parse_py(body_tree: html.HtmlElement):
-    classes: html.HtmlElement = parse_subsection(
-        body_tree,
-        "./dl[@class='py class']",
-    )
-
+    # def make_header(self, node, **kwargs):
+    #     heading_level = kwargs.get("heading_level", 2)
 
-def get_preamble(body_tree: html.HtmlElement):
-    first_dl = body_tree.find("dl")
-    intro_tree = first_dl.xpath("preceding-sibling::*")
-
-    preamble_div = E.DIV(E.CLASS("parsed-section"), id="preamble")
-
-    preamble_div.append(etree.Comment("SECTION BEGIN: preamble"))
-
-    if first_dl.find("dt").text_content() == "Author":
-        first_dl.drop_tree()
-
-    for elem in intro_tree:
-        preamble_div.append(deepcopy(elem))
-        elem.drop_tree()
-        # if elem.tag == "p":
-        # elem_copy = deepcopy(elem)
-        # elem.drop_tag()
-        # stripped_elem = etree.tostring(elem_copy)
-        # preamble_lines.append(elem_copy)
-
-    preamble_div.append(etree.Comment("SECTION END: preamble"))
+    #     marks = "#" * heading_level
+    #     return TextNode(f"{marks} {node}", newlines=2)
 
-    # pprint(preamble_div)
-    return preamble_div
+    # def _parse_node_paragraph(self, node, newlines: int = 2, **kwargs):
+    #     return TextNode(self.parse_content(node), newlines=2)
 
+    # def _parse_node_enumerated_list(self, node, **kwargs):
+    #     new_lines = []
+    #     for item in node:
+    #         # print("Parsing content:", item)
+    #         item_content = self.get_node(item)
+    #         # print("Item content:", item_content)
+    #         line = f"1. {item_content}"
 
-def fix_wrapping(body_tree: html.HtmlElement):
-    for p_elem in body_tree.iterfind(".//p"):
-        if not len(p_elem.getchildren()):
-            p_content = str(p_elem.text_content()).replace("\n", " ").strip()
-            p_elem.text = p_content
+    #         new_lines.append((line, 1))
 
+    #     # self.add_lines("", newlines=1)
+    #     new_lines.append(("", 1))
 
-def generate_frontmatter(body_content: html.HtmlElement):
-    metadata: dict = {
-        "title": str,
-        "description": str,
-        "draft": bool,
-        "images": list,
-        "type": str,
-        "layout": str,
-        "weight": int,
-        "toc": bool,
-    }
+    #     return new_lines
 
-    page_title = body_content.find("./h1")
-    metadata["title"] = str(page_title.text_content()).strip()
-    page_title.drop_tree()
+    # def _parse_node_list_item(self, node, **kwargs):
+    #     return TextNode(self.parse_content(node, **kwargs), newlines=1)
 
-    page_description = body_content.find("./p")
-    metadata["description"] = str(page_description.text_content()).strip()
-    page_description.drop_tree()
+    # def _parse_node_desc(self, node, **kwargs):
+    #     objtype = node.get("objtype", "NO_OBJ_TYPE")
+    #     self.parse_node(node, subfunction=objtype, **kwargs)
 
-    metadata["lastmod"] = datetime.now().strftime("%Y-%m-%dT%H:%M:%S%z")
-
-    metadata.update(
-        {
-            "draft": False,
-            "images": [],
-            "type": "docs",
-            "layout": "single",
-            "weight": 0,
-            "toc": True,
-        }
-    )
+    # def _parse_node_desc_class(self, node, **kwargs):
+    #     with DocPath(f"class", increment_heading=True, **kwargs) as d:
+    #         for child in node:
+    #             self.parse_node(child, **d)
 
-    first_p = body_content.find("./p")
-    if first_p is not None and not first_p.text_content():
-        first_p.drop_tree()
+    # def _parse_node_desc_function(self, node, **kwargs):
+    #     self._parse_node_desc_method(node, **kwargs)
 
-    first_span = body_content.find("./span")
-    if first_span is not None and not first_span.text_content():
-        first_span.drop_tree()
+    # def _parse_node_desc_method(self, node, **kwargs):
+    #     with DocPath(f"function", increment_heading=True, **kwargs) as d:
+    #         for child in node:
+    #             self.parse_node(child, **d)
 
-    return frontmatter_generator.dump_metadata(metadata)
-
-
-def reformat_elements(body_tree: html.HtmlElement):
-    if len(body_tree.xpath(".//dl[contains(@class, 'cpp')]")):
-        format_type = "cpp"
-    elif len(body_tree.xpath(".//dl[contains(@class, 'py')]")):
-        format_type = "py"
-    else:
-        raise RuntimeError("Could not determine formatting type!")
+    # def _parse_node_desc_signature(self, node, **kwargs):
 
-    class_dts = body_tree.xpath(".//dl[contains(@class, 'class')]/dt")
-    for elem in class_dts:
-        _reformat_class_dt(elem, format_type)
+    #     with DocPath(f"signature", **kwargs) as d:
+    #         node_wrapper = Node("span", classes=d.classes)
 
+    #         for item in node:
+    #             parsed_item = self.get_node(item, **d)
+    #             if parsed_item is not None:
+    #                 node_wrapper.append(parsed_item)
 
-def _get_class_format(elem: html.HtmlElement):
-    parent_dl = elem.iterancestors(tag="dl")
+    #         return TextNode(self.make_header(node_wrapper, **d), newlines=2)
 
+    # def _parse_node_desc_returns(self, node, **kwargs):
+    #     with DocPath("return-type", **kwargs) as d:
+    #         node_wrapper = Node("span", classes="return-type", render_empty=False)
+    #         node_wrapper.text = self.parse_content(node)
+    #         node_wrapper.tail = " "
 
-def _reformat_class_dt(elem: html.HtmlElement, format_type: str):
-    # def_type = ""
-    opener = elem.find("./*[@class='property']")
-    def_type = opener.text_content()
+    #     return node_wrapper
 
-    sig_prename = ""
-    if len(
-        val := opener.xpath("following-sibling::*[contains(@class, 'sig-prename')]")
-    ):
-        sig_prename = val[0].text_content()
-        val[0].drop_tree()
+    # def _parse_node_desc_ref(self, node, **kwargs):
+    #     with DocPath("pointer-ref", **kwargs) as d:
+    #         node_wrapper = Node("span", classes="pointer-ref", render_empty=False)
+    #         node_wrapper.text = self.parse_content(node)
 
-    sig_name = ""
-    if len(val := opener.xpath("following-sibling::*[contains(@class, 'sig-name')]")):
-        sig_name = val[0].text_content()
-        val[0].drop_tree()
+    #     return node_wrapper
 
-    opener.drop_tree()
+    # def _parse_node_desc_annotation(self, node, **kwargs):
+    #     with DocPath("annotation", **kwargs) as d:
+    #         node_wrapper = Node("span", classes="annotation")
+    #         node_wrapper.text = self.parse_content(node)
+    #         node_wrapper.tail = " "
 
-    sig_end = ""
-    if format_type == "cpp":
-        sig_end = elem.text_content().strip()
+    #     return node_wrapper
 
-    for sub_elem in elem:
-        sub_elem.drop_tree()
+    # def _parse_node_desc_addname(self, node, **kwargs):
+    #     with DocPath("addname", **kwargs) as d:
+    #         node_wrapper = Node("span", classes="addname")
+    #         node_wrapper.text = self.parse_content(node)
 
-    class_sig = f"{def_type.strip()} {sig_name.strip()}"
-    elem.set("id", class_sig.replace(" ", "_"))
+    #     return node_wrapper
 
-    if sig_end:
-        elem.text = f"{class_sig} {sig_end}"
-    else:
-        elem.text = class_sig
+    # def _parse_node_desc_name(self, node, **kwargs):
+    #     with DocPath("addname", **kwargs) as d:
+    #         node_wrapper = Node("span", classes="name")
+    #         node_wrapper.text = self.parse_content(node)
 
-    print(elem.text)
+    #     return node_wrapper
 
+    # def _parse_node_desc_content(self, node, **kwargs):
+    #     for elem in node:
+    #         self.parse_node(elem, **kwargs)
 
-def drop_helper_sections(body_tree: html.HtmlElement):
-    for elem in body_tree:
-        for removed_class in ("related", "footer"):
-            if removed_class in elem.get("class"):
-                elem.drop_tree()
+    # def _parse_node_desc_parameterlist(self, node, **kwargs):
+    #     with DocPath("parameter-list", **kwargs) as d:
+    #         node_wrapper = Node("span", classes="parameter-list")
+    #         # node_wrapper.text = "("
+    #         # node_wrapper.text = self.parse_content(node)
+    #         node_wrapper.append(TextNode("("))
+    #         for item in node:
+    #             parsed_item = self.get_node(item, **d)
+    #             if parsed_item is not None:
+    #                 node_wrapper.append(parsed_item)
+    #         node_wrapper.append(TextNode(")"))
 
+    #     return node_wrapper
 
-def drop_unwanted_sections(body_tree: html.HtmlElement):
-    for elem in body_tree.xpath(".//dl[contains(@class, 'attribute')]"):
-        for sub_elem in elem.xpath(".//dt/*[contains(@class, 'sig-name')]"):
-            attr_name = sub_elem.text_content()
-            if attr_name in ("__dict__", "__module__", "__weakref__"):
-                elem.drop_tree()
+    # def _parse_node_desc_parameter(self, node, **kwargs):
+    #     with DocPath("parameter", **kwargs) as d:
+    #         node_wrapper = Node("span", classes="param")
 
-    for elem in body_tree.xpath(".//span[not(text())]"):
-        if len(elem.text_content()) == 0:
-            elem.drop_tree()
+    #         for item in node:
+    #             parsed_item = self.get_node(item, **d)
+    #             if parsed_item is not None:
+    #                 node_wrapper.append(parsed_item)
+    #                 node_wrapper.append(TextNode(","), not_last=True)
 
-    for elem in body_tree.xpath(".//dl[@class='cpp type']"):
-        elem_dt = elem.find("./dt")
-        if elem_dt is not None and elem_dt.text_content().find("namespace") > -1:
-            elem_dt.drop_tree()
-            for dd in elem.xpath("./dd"):
-                dd.drop_tag()
+    #         return node_wrapper
 
-            elem.drop_tag()
+    #     node_wrapper = Node("span", classes="param")
+    #     node_wrapper.text = self.parse_content(node)
 
-    ids_to_drop = [
-        "zymkey.Zymkey.EPHEMERAL_KEY_SLOT",
-        "zymkey.Zymkey.__del__",
-    ]
+    # return node_wrapper
 
-    for drop_id in ids_to_drop:
-        for dl in body_tree.xpath(
-            f".//dl[contains(@class, 'py') and ./dt[@id='{drop_id}']]"
-        ):
-            dl.drop_tree()
-
-
-def get_doc_body(body_tree: html.HtmlElement):
-    content_xpath = (
-        "./div[@class='document']"
-        "/div[@class='documentwrapper']"
-        "/div[@class='body']"
-    )
-    inner_content = body_tree.find(content_xpath)
-
-    for elem in inner_content:
-        if elem.get("class") == "section":
-            return elem
-
-
-if __name__ == "__main__":
-    main()
+    # def _parse_content_paragraph(self, node, **kwargs):
+    #     return TextNode(self.parse_content(node, **kwargs), newlines=1)
