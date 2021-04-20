@@ -309,7 +309,7 @@ class Node(HtmlElement):
         elif type(obj) is list:
             for item in obj:
                 self.append(item, **kwargs)
-        elif isinstance(obj, Node):
+        elif isinstance(obj, Node) or isinstance(obj, etree._Element):
             self._content.append(obj)
         else:
             raise ValueError(f"Invalid type: {type(obj)}")

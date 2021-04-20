@@ -48,8 +48,8 @@ def htmlify():
         sys.exit(0)
 
     # for f in output_dir.glob("python_docs.xml"):
-    for f in ("python_docs.xml", "cpp_docs.xml"):
-        f = output_dir / f
+    for f in output_dir.glob("*.xml"):  # ("python_docs.xml", "cpp_docs.xml"):
+        # f = output_dir / f
 
         renderer = Renderer(f, output_dir)
 
@@ -122,6 +122,14 @@ class Renderer:
             section_title = "Introduction"
         elif section_id == "classes":
             section_title = "Classes"
+        elif section_id == "functions":
+            section_title = "Functions"
+        elif section_id == "typedefs":
+            section_title = "Typedefs"
+        elif section_id == "enums":
+            section_title = "Enums"
+        elif section_id == "structs":
+            section_title = "Structs"
         else:
             section_title = False
             return
@@ -147,7 +155,7 @@ class Renderer:
             tag = f"{tag}_{subfunction}"
 
         if node.tail and not node.tail.isspace():
-            if node.tag not in {"strong", "title_reference"}:
+            if node.tag not in {"strong", "title_reference", "emphasis"}:
                 warnings.warn(
                     (
                         f"The element {tag} contains a tail. No elements should have tails.\n"
@@ -193,6 +201,12 @@ class Renderer:
             parsed = self.parse_content(elem, node, context=d, **kwargs)
             return parsed
 
+    def _parse_node_emphasis(self, node, context=None, **kwargs):
+        with DocTree("em", **context) as d:
+            elem = Node("em", **d)
+            parsed = self.parse_content(elem, node, context=d, **kwargs)
+            return parsed
+
     def _parse_node_title_reference(self, node, context=None, **kwargs):
         with DocTree("span", **context) as d:
             elem = Node("span", classes="title-reference", **d)
@@ -202,6 +216,63 @@ class Renderer:
     def _parse_node_paragraph(self, node, context=None, **kwargs):
         with DocTree("p", **context) as d:
             elem = Node("p", **d)  # E.p()
+            parsed = self.parse_content(elem, node, context=d, **kwargs)
+            return parsed
+
+    def _parse_node_return_value(self, node, context=None, **kwargs):
+        with DocTree("div", **context) as d:
+            wrapper = Node("div", **d)
+            wrapper.set("class", "returns")
+
+            with DocTree("h", **d) as d_h:
+                wrapper.append(Node("h", "Returns", **d_h))
+
+            return_type_elem_orig = node.getparent().find("return_type")
+            if return_type_elem_orig is not None:
+                return_type_elem = deepcopy(return_type_elem_orig)
+                return_type_elem_orig.getparent().remove(return_type_elem_orig)
+
+                type_elem = Node("span", **d)
+                type_elem.set("class", "return_type")
+                type_elem = self.parse_content(
+                    type_elem, return_type_elem, context=d, **kwargs
+                )
+
+                type_elem = self.unnest_content(
+                    type_elem,
+                    unnest_elems={"p", "literal"},
+                    **kwargs,
+                )
+
+                stripped_lines = []
+                for line in type_elem.text:
+                    stripped_lines.append(line.strip(" ."))
+
+                type_elem.text = stripped_lines
+
+                wrapper.append(type_elem)
+
+            elem = Node("span", **d)  # E.p()
+            elem.set("class", "return_value")
+            wrapper.append(elem)
+            elem = self.parse_content(elem, node, context=d, **kwargs)
+
+            return wrapper
+
+    def _parse_node_return_type(self, node, context=None, **kwargs):
+        # Do nothing, because the `return_type` tag is also handled by the
+        # `_parse_node_return_value` method.
+        return None
+
+    # def _parse_node_return_type(self, node, context=None, **kwargs):
+    #     with DocTree("span", classes="return_type", **context) as d:
+    #         elem = Node("span", **d)  # E.p()
+    #         parsed = self.parse_content(elem, node, context=d, **kwargs)
+    #         return parsed
+
+    def _parse_node_block_quote(self, node, context=None, **kwargs):
+        with DocTree("blockquote", **context) as d:
+            elem = Node("blockquote", **d)  # E.p()
             parsed = self.parse_content(elem, node, context=d, **kwargs)
             return parsed
 
@@ -228,11 +299,11 @@ class Renderer:
             return self.unnest_content(elem, **kwargs)
 
     def _parse_node_desc(self, node, context=None, **kwargs):
-        objtype = node.get("objtype", "NO_OBJ_TYPE")
+        objtype = node.get("objtype", "NONE")
         return self.extract_tree(node, subfunction=objtype, context=context, **kwargs)
 
     def _parse_node_definition_list(self, node, context=None, **kwargs):
-        objtype = node.get("content-type", "NO_OBJ_TYPE")
+        objtype = node.get("content-type", "NONE")
         return self.extract_tree(node, subfunction=objtype, context=context, **kwargs)
 
     def _parse_node_desc_class(self, node, context=None, **kwargs):
@@ -248,20 +319,61 @@ class Renderer:
 
             return elem
 
-    def _parse_node_desc_signature(self, node, context=None, **kwargs):
+    def _parse_node_func_context(self, node, context=None, **kwargs):
+        with DocTree("div", **context) as d:
+            elem = Node("div", **d)  # E.div()
+            elem.set("class", "context")
+
+            for child in node:
+                if (
+                    extracted := self.extract_tree(child, context=d, **kwargs)
+                ) is not None:
+                    elem.append(extracted)
+
+            return elem
+
+    def _parse_node_desc_context(self, node, context=None, **kwargs):
         with DocTree(
             "h", indent_children=False, increment_heading=True, **context
         ) as d:
-            node_wrapper = Node("h", **d)  # E.span()
-            node_wrapper.set("class", "signature")
+            elem = Node(
+                "h", indent_children=False, increment_heading=True, **d
+            )  # E.ol()
+            elem.set("class", "context-name")
+            parsed = self.parse_content(elem, node, context=d, **kwargs)
+            # indented = parsed.indent()
+            return parsed
 
-            for item in node:
-                if (
-                    extracted := self.extract_tree(item, context=d, **kwargs)
-                ) is not None:
-                    node_wrapper.append(extracted)
+    def _parse_node_desc_signature(self, node, context=None, **kwargs):
+        sig_type = node.get("sig-type", None)
+        if sig_type is not None:
+            if sig_type == "enumerator":
+                with DocTree("span", **context) as d:
+                    node_wrapper = Node("span", **d)  # E.span()
+                    node_wrapper.set("class", "enum-signature")
 
-        return node_wrapper
+                    for item in node:
+                        if (
+                            extracted := self.extract_tree(item, context=d, **kwargs)
+                        ) is not None:
+                            node_wrapper.append(extracted)
+
+                return node_wrapper
+
+        else:
+            with DocTree(
+                "h", indent_children=False, increment_heading=True, **context
+            ) as d:
+                node_wrapper = Node("h", **d)  # E.span()
+                node_wrapper.set("class", "signature")
+
+                for item in node:
+                    if (
+                        extracted := self.extract_tree(item, context=d, **kwargs)
+                    ) is not None:
+                        node_wrapper.append(extracted)
+
+            return node_wrapper
 
     def _parse_node_desc_annotation(self, node, context=None, **kwargs):
         node_wrapper = Node("span")  # E.span()
@@ -291,6 +403,7 @@ class Renderer:
 
     def _parse_node_desc_content(self, node, context=None, **kwargs):
         with DocTree("div", increment_heading=True, **context) as d:
+            # ugly_dump(node)
             elem = Node("div", **d)
             elem.set("class", "body")
             return self.parse_content(elem, node, context=d, **kwargs)
@@ -334,6 +447,58 @@ class Renderer:
         with DocTree("div", increase_heading=True, **context) as d:
             elem = Node("div", **d)  # E.div()
             elem.set("class", "method")
+
+            for child in node:
+                if (
+                    extracted := self.extract_tree(child, context=d, **kwargs)
+                ) is not None:
+                    elem.append(extracted)
+
+            return elem
+
+    def _parse_node_desc_var(self, node, context=None, **kwargs):
+        with DocTree("div", increase_heading=True, **context) as d:
+            elem = Node("div", **d)  # E.div()
+            elem.set("class", "struct-var")
+
+            for child in node:
+                if (
+                    extracted := self.extract_tree(child, context=d, **kwargs)
+                ) is not None:
+                    elem.append(extracted)
+
+            return elem
+
+    def _parse_node_desc_struct(self, node, context=None, **kwargs):
+        with DocTree("div", increase_heading=True, **context) as d:
+            elem = Node("div", **d)  # E.div()
+            elem.set("class", "struct")
+
+            for child in node:
+                if (
+                    extracted := self.extract_tree(child, context=d, **kwargs)
+                ) is not None:
+                    elem.append(extracted)
+
+            return elem
+
+    def _parse_node_desc_enum(self, node, context=None, **kwargs):
+        with DocTree("div", increase_heading=True, **context) as d:
+            elem = Node("div", **d)  # E.div()
+            elem.set("class", "enum")
+
+            for child in node:
+                if (
+                    extracted := self.extract_tree(child, context=d, **kwargs)
+                ) is not None:
+                    elem.append(extracted)
+
+            return elem
+
+    def _parse_node_desc_enumerator(self, node, context=None, **kwargs):
+        with DocTree("div", increase_heading=True, **context) as d:
+            elem = Node("div", **d)  # E.div()
+            elem.set("class", "enum-value")
 
             for child in node:
                 if (
@@ -404,6 +569,21 @@ class Renderer:
             # indented = parsed.indent()
             return parsed
 
+    def _parse_node_struct_description(self, node, context=None, **kwargs):
+        return self._parse_node_func_description(node, context=context, **kwargs)
+
+    def _parse_node_enum_description(self, node, context=None, **kwargs):
+        for child in node:
+            if child.text and child.text == "Values:":
+                node.remove(child)
+
+        with DocTree("div", **context) as d:
+            elem = Node("div", **d)  # E.ol()
+            elem.set("class", "description")
+            parsed = self.parse_content(elem, node, context=d, **kwargs)
+
+            return parsed
+
     def _parse_node_definition_list_parameters(self, node, context=None, **kwargs):
         with DocTree("div", **context) as d:
             node_wrapper = Node("div", **d)  # E.span()
@@ -419,6 +599,24 @@ class Renderer:
                 # parsed._content[-1].tail += ")"
 
         return node_wrapper
+
+    def _parse_node_definition_list_NONE(self, node, context=None, **kwargs):
+        with DocTree("div", **context) as d:
+            node_wrapper = Node("div", **d)  # E.span()
+            # node_wrapper.set("class", "parameters")
+
+            # with DocTree("h", increment_heading=True, **d) as d_h:
+            #     node_wrapper.append(Node("h", "Parameters", **d_h))
+
+            with DocTree("ul", **d) as d_ol:
+                ol = Node("ul", **d_ol)
+                parsed = self.parse_content(ol, node, context=d_ol, **kwargs)
+                node_wrapper.append(parsed)
+                # parsed._content[-1].tail += ")"
+
+        return node_wrapper
+
+    # def _parse_node_defin
 
     def _parse_node_param(self, node, context=None, **kwargs):
         with DocTree("li", **context) as d:
@@ -540,6 +738,9 @@ class Renderer:
         UNNESTABLE = set(
             "p",
         )
+
+        UNNESTABLE = set(kwargs.get("unnest_elems", UNNESTABLE))
+
         if len(elem) == 1:
             child = next(iter(elem))
 

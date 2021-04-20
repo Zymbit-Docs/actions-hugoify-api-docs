@@ -11,7 +11,7 @@ from .utils import partial_dump, ugly_dump, ugly_dump_if_contains
 
 from pprint import pprint
 
-from .xslt import xslt
+# from .xslt import xslt
 from .htmlify import htmlify
 
 
@@ -129,7 +129,9 @@ class CodeFile(object):
         self.pre_tidy_tree()
 
         # return
-        if self.domain == self.DOMAIN_CPP:
+        if self.domain == self.DOMAIN_C:
+            self._parse_c()
+        elif self.domain == self.DOMAIN_CPP:
             self._parse_cpp()
         elif self.domain == self.DOMAIN_PY:
             self._parse_py()
@@ -301,6 +303,133 @@ class CodeFile(object):
                 else:
                     parent.text += " "
 
+    def _parse_c(self):
+        if self.domain != self.DOMAIN_C:
+            raise RuntimeError("_parse_c can only be called on Python definitions.")
+
+        # Correct the domain
+        bad_domain_elems = self.root.xpath("//*[@domain='cpp' or @classes='cpp']")
+        for elem in bad_domain_elems:
+            if elem.get("domain", None) == "cpp":
+                elem.set("domain", "c")
+            if (elem_classes := elem.get("classes", "")).find("cpp") > -1:
+                elem.set("classes", elem_classes.replace("cpp", "c"))
+
+        for elem in self.root.xpath(".//desc_signature/target"):
+            return_elem = E.desc_returns(elem.tail.strip())
+            parent = elem.find("..")
+            parent.replace(elem, return_elem)
+
+        # Move typedefs to a dedicated section
+        # typedef_section = E.section(id="typedefs")
+        # typedef_xpath = self.root.find("./container[@objtype='typedef']")
+        # for elem in typedef_xpath.xpath("./desc"):
+        #     typedef_section.append(deepcopy(elem))
+        # typedef_xpath.find("..").replace(typedef_xpath, typedef_section)
+
+        # Move defines to a dedicated section
+        defines_section = E.section(id="defines")
+        defines = self.root.xpath(".//desc[@objtype='macro']")
+        for elem in defines:
+            defines_section.append(deepcopy(elem))
+            elem.getparent().remove(elem)
+        if (typedef_section := self.root.find("./section[@id='typedefs']")) is not None:
+            typedef_section.addprevious(defines_section)
+        else:
+            self.root.append(defines_section)
+
+        if (
+            defines_container := self.root.find("./container[@objtype='define']")
+        ) is not None:
+            defines_container.getparent().remove(defines_container)
+
+        # Move structs to a dedicated section
+        structs_section = E.section(id="structs")
+        structs = self.root.xpath(".//desc[@objtype='struct']")
+        for elem in structs:
+            structs_section.append(deepcopy(self.__clean_struct(elem)))
+            elem.getparent().remove(elem)
+        if (typedef_section := self.root.find("./section[@id='typedefs']")) is not None:
+            typedef_section.addnext(structs_section)
+        else:
+            self.root.append(structs_section)
+
+        # Move enums to a dedicated section
+        enums_section = E.section(id="enums")
+        enums = self.root.xpath(".//desc[@objtype='enum']")
+        for elem in enums:
+            enums_section.append(deepcopy(elem))
+            elem.getparent().remove(elem)
+        if (structs_section := self.root.find("./section[@id='structs']")) is not None:
+            structs_section.addnext(enums_section)
+        else:
+            self.root.append(enums_section)
+
+        if (
+            enum_container := self.root.find("./container[@objtype='enum']")
+        ) is not None:
+            enum_container.getparent().remove(enum_container)
+
+        # Add contexts to individual functions, then move the functions to the top level
+        functions_section = E.section(id="functions")
+        func_containers = self.root.xpath(
+            "./container[@objtype='user-defined' and ./desc[@objtype='function']]"
+        )
+
+        contexts_list = {"": E.func_context("")}
+        for container in func_containers:
+            container_context_elem = container.find("./rubric")
+            if container_context_elem is not None:
+                container_context = container_context_elem.text
+            else:
+                container_context = ""
+
+            if (parent_context := contexts_list.get(container_context, None)) is None:
+                contexts_list[container_context] = E.func_context("")
+                contexts_list[container_context].append(
+                    E.desc_context(container_context)
+                )
+
+            for func in container.xpath("./desc[@objtype='function']"):
+                # func.insert(0, E.desc_context(container_context))
+                # func.set("context", container_context)
+                contexts_list[container_context].append(deepcopy(func))
+
+            container.getparent().remove(container)
+
+        functions_section.extend([_ for _ in contexts_list.values() if len(_) > 0])
+
+        if (enums_section := self.root.find("./section[@id='enums']")) is not None:
+            enums_section.addnext(functions_section)
+        else:
+            self.root.append(functions_section)
+
+        # Add contexts to individual attribs, then move the attribs to the top level
+        # functions_section = E.section(id="functions")
+        # func_containers = self.root.xpath(
+        #     "./desc[@objtype='struct']//container[@objtype='public-attrib']"
+        # )
+
+        # Remove the namespace wrapper
+        # namespace_wrappers = self.root.xpath("./desc[@desctype='type']")
+        # for wrapper in namespace_wrappers:
+        #     namespace_contents = wrapper.xpath(
+        #         "./desc_signature[./target[contains(@ids, 'namespace')]]"
+        #         "/following-sibling::desc_content[1]/*"
+        #     )
+
+        #     ix = self.root.index(wrapper)
+        #     for elem in namespace_contents:
+        #         self.root.insert(ix, deepcopy(elem))
+        #         ix += 1
+
+        #     self.root.remove(wrapper)
+
+        self._parse_cpp()
+        self.__clean_function(self.root.xpath(".//desc[@objtype='function']"))
+        self.__clean_enum(self.root.xpath(".//desc[@objtype='enum']"))
+        self.__remove_reference_elems()
+
     def _parse_py(self):
         if self.domain != self.DOMAIN_PY:
             raise RuntimeError("_parse_py can only be called on Python definitions.")
@@ -356,7 +485,7 @@ class CodeFile(object):
 
             outer_elem.text = "".join(outer_text)
 
-            outer_elem.addnext(original_copy)
+            # outer_elem.addnext(original_copy)
 
     def __remove_unneeded_attrs(self):
         attrs = self.root.xpath(
@@ -388,8 +517,8 @@ class CodeFile(object):
             content.replace(field_list, definition_list)
 
     def _parse_cpp(self):
-        if self.domain != self.DOMAIN_CPP:
-            raise RuntimeError("_parse_cpp can only be called on C++ definitions.")
+        # if self.domain != self.DOMAIN_CPP:
+        #     raise RuntimeError("_parse_cpp can only be called on C++ definitions.")
 
         # Remove the namespace wrapper
         namespace_wrappers = self.root.xpath("./desc[@desctype='type']")
@@ -432,7 +561,8 @@ class CodeFile(object):
         structs_section = E.section(id="structs")
         structs = self.root.xpath("./desc[@objtype='struct']")
         for elem in structs:
-            structs_section.append(deepcopy(elem))
+            # structs_section.append(deepcopy(elem))
+            structs_section.append(deepcopy(self.__clean_struct(elem)))
             self.root.remove(elem)
         self.root.find("./section[@id='exception_classes']").addnext(structs_section)
 
@@ -442,8 +572,9 @@ class CodeFile(object):
         # for elem in classes:
         #     classes_section.append(deepcopy(elem))
         #     self.root.remove(elem)
-        classes_section = self.__arrange_classes()
-        self.root.find("./section[@id='structs']").addnext(classes_section)
+        if self.domain != self.DOMAIN_C:
+            classes_section = self.__arrange_classes()
+            self.root.find("./section[@id='structs']").addnext(classes_section)
 
         # ref_xpath = (
         #     "./section[@id='classes' or @id='exception_classes']"
@@ -501,7 +632,9 @@ class CodeFile(object):
                 elem.insert(0, E.desc_annotation(""))
 
             type_elem = elem.find("./desc_type")
-            if type_elem.tail is None or not len(type_elem.tail):
+            if type_elem is None:
+                continue
+            if type_elem.tail is None or not type_elem.tail:
                 desc_ref = E.desc_ref("")
                 type_elem.addnext(desc_ref)
                 continue
@@ -515,6 +648,8 @@ class CodeFile(object):
         for elem in self.root.xpath(".//desc_parameterlist/desc_parameter"):
             ref_elem = elem.find("./desc_ref")
 
+            if ref_elem is None:
+                continue
             if not ref_elem.tail or not len(ref_elem.tail.strip()):
                 ref_elem.tail = ""
 
@@ -585,6 +720,9 @@ class CodeFile(object):
             "./section[@id='classes' or @id='exception_classes']"
             "//desc_parameterlist/desc_parameter/reference"
         )
+
+        if self.domain == self.DOMAIN_C:
+            ref_xpath = "./section[@id='functions' or @id='typedefs']" "//reference"
         for elem in self.root.xpath(ref_xpath):
             reftitle = elem.get("reftitle", default=elem.text)
             new_ref = E.desc_type(reftitle)
@@ -613,28 +751,70 @@ class CodeFile(object):
                 self.__clean_class_content(elem)
             return
 
-        # Extract functions from section containers
-        section_containers = elem_root.xpath(
-            "./container[contains(@classes, 'breathe-sectiondef')]"
+        # Add contexts to individual functions, then move the functions to the top level
+        # functions_section = E.div(id="functions")
+        func_containers = elem_root.xpath(
+            "./container[(@objtype='user-defined' or @objtype='public-func' or @objtype='private-attrib') and ./desc[@objtype='function' or @objtype='var']]"
         )
-        for section in section_containers:
-            rubric = section.find("./*[1][@classes='breathe-sectiondef-title']")
-            if rubric is None:
-                continue
 
-            section_name = rubric.text.strip()
-            section.remove(rubric)
+        contexts_list = {"": E.func_context("")}
+        for container in func_containers:
+            container_context_elem = container.find("./rubric")
+            if container_context_elem is not None:
+                container_context = container_context_elem.text
+            else:
+                container_context = ""
 
-            section_index = elem_root.index(section)
+            if (parent_context := contexts_list.get(container_context, None)) is None:
+                contexts_list[container_context] = E.func_context("")
+                contexts_list[container_context].append(
+                    E.desc_context(container_context)
+                )
 
-            functions = section.xpath("./desc[@objtype='function']")
-            for func in functions:
-                func.set("section-name", section_name)
+            for func in container.xpath(
+                "./desc[@objtype='function' or @objtype='var']"
+            ):
+                # func.insert(0, E.desc_context(container_context))
+                # func.set("context", container_context)
+                contexts_list[container_context].append(deepcopy(func))
 
-                elem_root.insert(section_index, deepcopy(func))
-                section_index += 1
+            container.getparent().remove(container)
 
-            elem_root.remove(section)
+        elem_root.extend([_ for _ in contexts_list.values() if len(_) > 0])
+
+        # for elem in elem_root.xpath("./container[@objtype='private-attrib']"):
+        #     for var in elem.xpath("./desc[@objtype='var']"):
+        #         content.append(var)
+
+        #     content.remove(elem)
+
+        # if (enums_section := self.root.find("./section[@id='enums']")) is not None:
+        #     enums_section.addnext(functions_section)
+        # else:
+        #     self.root.append(functions_section)
+
+        # Extract functions from section containers
+        # section_containers = elem_root.xpath(
+        #     "./container[contains(@classes, 'breathe-sectiondef')]"
+        # )
+        # for section in section_containers:
+        #     rubric = section.find("./*[1][@classes='breathe-sectiondef-title']")
+        #     if rubric is None:
+        #         continue
+
+        #     section_name = rubric.text.strip()
+        #     section.remove(rubric)
+
+        #     section_index = elem_root.index(section)
+
+        #     functions = section.xpath("./desc[@objtype='function']")
+        #     for func in functions:
+        #         func.set("section-name", section_name)
+
+        #         elem_root.insert(section_index, deepcopy(func))
+        #         section_index += 1
+
+        #     elem_root.remove(section)
 
         self.__clean_function(
             elem_root.xpath(".//desc[@objtype='function' or @objtype='method']")
@@ -664,6 +844,79 @@ class CodeFile(object):
                 fp.write(etree.tostring(doc, encoding="unicode"))
                 fp.write("\n")
 
+    def __clean_enum(self, elem_root):
+        if type(elem_root) is list:
+            for elem in elem_root:
+                self.__clean_enum(elem)
+            return
+
+        content = elem_root.find("./desc_content")
+
+        enum_description = content.xpath(
+            "./desc[@objtype='enumerator'][1]/preceding-sibling::*"
+        )
+
+        desc = E.enum_description("")
+        for elem in enum_description:
+            new_elem = deepcopy(elem)
+            # ugly_dump(new_elem)
+
+            if new_elem.text:
+                new_elem.text = new_elem.text.strip()
+            else:
+                new_elem.text = ""
+
+            desc.append(new_elem)
+            content.remove(elem)
+        content.insert(0, desc)
+
+        for elem in content.xpath("./desc[@objtype='enumerator']"):
+            sub_content = elem.find("./desc_content")
+            if len(sub_content):
+                continue
+            if sub_content.text and len(sub_context.text.strip()):
+                continue
+
+            elem.remove(sub_content)
+
+            sig = elem.find("./desc_signature")
+            if len(sig):
+                sig.set("sig-type", "enumerator")
+
+    def __clean_struct(self, elem_root):
+        if type(elem_root) is list:
+            for elem in elem_root:
+                self.__clean_struct(elem)
+            return
+
+        content = elem_root.find("./desc_content")
+
+        struct_description = content.xpath(
+            "./container[@objtype='public-attrib'][1]/preceding-sibling::*"
+        )
+
+        desc = E.struct_description("")
+        for elem in struct_description:
+            new_elem = deepcopy(elem)
+            # ugly_dump(new_elem)
+
+            if new_elem.text:
+                new_elem.text = new_elem.text.strip()
+            else:
+                new_elem.text = ""
+
+            desc.append(new_elem)
+            content.remove(elem)
+        content.insert(0, desc)
+
+        for elem in content.xpath("./container[@objtype='public-attrib']"):
+            for var in elem.xpath("./desc[@objtype='var']"):
+                content.append(var)
+
+            content.remove(elem)
+
+        return elem_root
+
     def __clean_function(self, elem_root):
         if type(elem_root) is list:
             for elem in elem_root:
@@ -676,10 +929,59 @@ class CodeFile(object):
 
         # Correct a weird issue apparently introduced by Sphinx or Breathe,
         # where the entire definition list somehow gets embedded in a paragraph.
-        def_list = content.find("./paragraph/definition_list")
-        if def_list:
-            new_def_list = content.append(deepcopy(def_list))
-            def_list.find("..").remove(def_list)
+        def_list = content.xpath("./paragraph/definition_list")
+        # if def_list:
+        for item in def_list:
+            parent = item.find("../..")
+            parent.append(deepcopy(item))
+            # new_def_list = content.append(deepcopy(def_list))
+
+            item.find("..").remove(item)
+
+        def_list = content.xpath("./bullet_list/list_item/definition_list")
+        # if def_list:
+        for item in def_list:
+            parent = item.find("../../..")
+            parent.append(deepcopy(item))
+            # new_def_list = content.append(deepcopy(def_list))
+
+            item.find("..").remove(item)
+
+        def_list = content.xpath(
+            "./paragraph/bullet_list/list_item/paragraph/definition_list"
+        )
+        # if def_list:
+        for item in def_list:
+            content.append(deepcopy(item))
+            # new_def_list = content.append(deepcopy(def_list))
+
+            item.find("..").remove(item)
+
+        def_list = content.xpath(
+            ".//paragraph/definition_list[../*[1][name()='literal_strong']]"
+        )
+        for item in def_list:
+            item.getprevious().tail += item.find("./definition_list_item/term").text
+            item.getparent().extend(
+                item.find("./definition_list_item/definition").getchildren()
+            )
+            # content.append(deepcopy(item))
+            item.find("..").remove(item)
+
+        # def_list = content.xpath("./bullet_list/list_item/paragraph/definition_list")
+        # # if def_list:
+        # for item in def_list:
+        #     # parent = item.find("../../../..")
+        #     content.append(deepcopy(item))
+        #     # new_def_list = content.append(deepcopy(def_list))
+
+        #     item.find("..").remove(item)
+
+        # def_list = content.find("./bullet_list/list_item/paragraph/definition_list")
+        # if def_list:
+        #     ugly_dump(def_list)
+        #     new_def_list = content.append(deepcopy(def_list))
+        #     def_list.find("..").remove(def_list)
 
         # Extract bullet lists that are nested within paragraphs
         nested_bullets = content.xpath(".//paragraph/bullet_list")
@@ -688,7 +990,7 @@ class CodeFile(object):
             parent.addnext(deepcopy(nested))
             parent.remove(nested)
 
-        if self.domain == self.DOMAIN_CPP:
+        if self.domain == self.DOMAIN_CPP or self.domain == self.DOMAIN_C:
             function_description = content.xpath(
                 "./definition_list/preceding-sibling::*"
             )
@@ -715,7 +1017,7 @@ class CodeFile(object):
         # self.__rename_python_param_elems()
 
         # failing_node = False
-        if self.domain == self.DOMAIN_CPP:
+        if self.domain == self.DOMAIN_CPP or self.domain == self.DOMAIN_C:
             def_list = content.find("./definition_list")
         else:
             def_list = content.find("./field_list")
@@ -724,19 +1026,19 @@ class CodeFile(object):
         if def_list is None:
             def_items = []
         else:
-            if self.domain == self.DOMAIN_CPP:
+            if self.domain == self.DOMAIN_CPP or self.domain == self.DOMAIN_C:
                 def_items = def_list.xpath("./definition_list_item")
             else:
                 def_items = def_list.xpath("./field")
 
         for item in def_items:
-            if self.domain == self.DOMAIN_CPP:
+            if self.domain == self.DOMAIN_CPP or self.domain == self.DOMAIN_C:
                 term = item.find("./term")
             else:
                 term = item.find("./field_name")
 
             if term.text in ("Parameters", "Exceptions", "Raises"):
-                if self.domain == self.DOMAIN_CPP:
+                if self.domain == self.DOMAIN_CPP or self.domain == self.DOMAIN_C:
                     sub_items = item.xpath("./definition/bullet_list/list_item")
                 else:
                     sub_items = item.xpath("./field_body/bullet_list/list_item")
@@ -761,16 +1063,16 @@ class CodeFile(object):
 
                 item.find("..").remove(item)
             elif term.text == "Return" or term.text == "Returns":
-                new_item = E.return_value("Here's some test intro text! ")
+                new_item = E.return_value("")
 
-                if self.domain == self.DOMAIN_CPP:
+                if self.domain == self.DOMAIN_CPP or self.domain == self.DOMAIN_C:
                     val = item.find("./definition")
                 else:
                     val = item.find("./field_body")
 
                 new_item.extend(deepcopy(val).getchildren())
 
-                new_item[-1].tail = " And here's some follower text!"
+                # new_item[-1].tail = " And here's some follower text!"
 
                 content.append(new_item)
                 item.find("..").remove(item)
@@ -806,7 +1108,7 @@ class CodeFile(object):
                 new_item = E.param("")
 
                 param_values = list(param)
-                if self.domain == self.DOMAIN_CPP:
+                if self.domain == self.DOMAIN_CPP or self.domain == self.DOMAIN_C:
                     param_line = param_values[0].find("./literal")
                     param_name = param_line.text
                     param_desc = param_line.tail
@@ -827,6 +1129,8 @@ class CodeFile(object):
                     if len(param_values) > 1:
                         param_desc_elem.extend(param_values[1:])
 
+                    new_item.append(param_desc_elem)
+
                 else:
                     new_item = self.__process_python_methods(
                         new_item,
@@ -845,7 +1149,7 @@ class CodeFile(object):
 
                 exc_values = list(exc)
                 exc_line = None
-                if self.domain == self.DOMAIN_CPP:
+                if self.domain == self.DOMAIN_CPP or self.domain == self.DOMAIN_C:
                     exc_line = exc_values[0].find("./literal")
                     exc_name = exc_line.text.strip()
                     exc_desc = exc_line.tail
