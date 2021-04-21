@@ -81,7 +81,12 @@ class Renderer:
             fp.write(generated_frontmatter)
             for block in self.rendered_trees:
                 raw = block.raw()
+
                 etree.indent(raw, space="    ", level=0)
+
+                for elem in raw.xpath(".//span[@class='pointer-ref']"):
+                    elem.tail = elem.tail.strip()
+
                 text = etree.tostring(raw).decode("utf-8")
 
                 text = self.tidy_text(text)

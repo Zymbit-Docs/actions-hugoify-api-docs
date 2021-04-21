@@ -654,8 +654,14 @@ class CodeFile(object):
                 ref_elem.tail = ""
 
             old_elem = ref_elem.getnext()
+            default_val = deepcopy(old_elem)
             elem.replace(old_elem, E.desc_name(old_elem.text))
-            # print(ref_elem.tail, ref_elem.getnext())
+
+            if default_val.tail and len(default_val.tail):
+                split_val = default_val.tail.split("=")
+                if len(split_val) > 1:
+                    val = E.default_value(split_val[1].strip())
+                    ref_elem.getparent().append(val)
 
         ref_xpath = ".//desc[@objtype='function']//desc_signature/reference"
         for elem in self.root.xpath(ref_xpath):
