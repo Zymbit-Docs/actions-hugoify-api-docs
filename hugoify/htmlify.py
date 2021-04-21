@@ -141,6 +141,7 @@ class Renderer:
 
         with DocTree("div", opening_newline=True) as d:
             node = Node("div", **d)
+            node.set("class", "api-docs")
             # d.add_hang(node)
 
             with DocTree("h", **d) as d_h:
