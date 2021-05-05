@@ -18,6 +18,8 @@ from .parser_utils import DocTree, Node
 
 from re import sub as re_sub
 
+from itertools import chain
+
 # if not sys.warnoptions:
 #     import warnings
 
@@ -39,16 +41,18 @@ def get_abs(relative):
     return str(PWD / relative)
 
 
-def htmlify():
-    input_dir = Path(os.environ["INPUT_RAWPATH"])
-    output_dir = Path(os.environ["INPUT_OUTPUTPATH"])
+def htmlify(input_dir, output_dir):
+    if not input_dir:
+        input_dir = Path(os.environ["INPUT_RAWPATH"])
+    if not output_dir:
+        output_dir = Path(os.environ["INPUT_OUTPUTPATH"])
 
-    if not output_dir.exists():
+    if not input_dir.exists():
         print("Exiting because there are no files to process...")
         sys.exit(0)
 
     # for f in output_dir.glob("python_docs.xml"):
-    for f in output_dir.glob("*.xml"):  # ("python_docs.xml", "cpp_docs.xml"):
+    for f in input_dir.glob("*-processed.xml"):  # ("python_docs.xml", "cpp_docs.xml"):
         # f = output_dir / f
 
         renderer = Renderer(f, output_dir)
@@ -75,12 +79,21 @@ class Renderer:
         frontmatter = etree.XSLT(etree.parse(get_abs("xslt/frontmatter.xslt")))
         generated_frontmatter = str(frontmatter(tree.getroot())).lstrip()
 
+        self.toc = {}
+
         self.parse_section(self.document_root.xpath("./section"))
 
         with self.rendered_file.open("w") as fp:
             fp.write(generated_frontmatter)
             for block in self.rendered_trees:
+
                 raw = block.raw()
+
+                # for subnode in raw.xpath(".//*[contains(@class, 'include-toc')]"):
+                #     name_node = subnode.xpath(
+                #         "./span[contains(@class, 'name') and not(contains(@class, 'addname'))]"
+                #     )[0]
+                #     print(subnode.tag, "\t", name_node.text)
 
                 etree.indent(raw, space="    ", level=0)
 
@@ -92,6 +105,22 @@ class Renderer:
                 text = self.tidy_text(text)
                 fp.write(text)
                 fp.write("\n")
+
+    # def stringify(self, raw):
+    #     parts = (
+    #         [raw.text]
+    #         + list(
+    #             chain(
+    #                 *(
+    #                     [c.text, etree.tostring(c).decode("utf-8"), c.tail]
+    #                     for c in raw.getchildren()
+    #                 )
+    #             )
+    #         )
+    #         + [raw.tail]
+    #     )
+    #     # filter removes possible Nones in texts and tails
+    #     return "".join(filter(None, parts))
 
     def tidy_text(self, text):
 
@@ -139,13 +168,15 @@ class Renderer:
             section_title = False
             return
 
+        # current_toc = {}
+
         with DocTree("div", opening_newline=True) as d:
             node = Node("div", **d)
             node.set("class", "api-docs")
             # d.add_hang(node)
 
             with DocTree("h", **d) as d_h:
-                title_node = Node("h", section_title, **d_h)
+                title_node = Node("h", section_title, classes="include-toc", **d_h)
                 node.append(title_node)
 
                 # with DocTree(None, increment_heading=True, **d) as d_contents:
@@ -153,6 +184,8 @@ class Renderer:
                     self.parse_tree(node, child, context=d_h)
 
                 self.rendered_trees.append(node)
+
+        # self.toc[section_title] = current_toc
 
     def extract_tree(self, node, subfunction: str = None, context=None, **kwargs):
         tag = node.tag
@@ -371,7 +404,7 @@ class Renderer:
                 "h", indent_children=False, increment_heading=True, **context
             ) as d:
                 node_wrapper = Node("h", **d)  # E.span()
-                node_wrapper.set("class", "signature")
+                node_wrapper.set("class", "signature include-toc")
 
                 for item in node:
                     if (

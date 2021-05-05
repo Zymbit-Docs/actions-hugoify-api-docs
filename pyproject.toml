@@ -14,8 +14,6 @@ lxml = "^4.6.3"
 
 [tool.poetry.scripts]
 hugoify = 'hugoify:main'
-xslt = "hugoify:xslt"
-htmlify = "hugoify:htmlify"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

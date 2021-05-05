@@ -18,4 +18,4 @@ RUN poetry install
 ENV INPUT_RAWPATH="input" \
     INPUT_OUTPUTPATH="output"
 # WORKDIR /github/workspace
-ENTRYPOINT ["/etc/poetry/bin/poetry", "run"]
+ENTRYPOINT ["/etc/poetry/bin/poetry", "run", "hugoify"]

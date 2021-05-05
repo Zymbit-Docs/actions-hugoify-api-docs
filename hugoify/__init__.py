@@ -48,7 +48,7 @@ def main():
         contents.parse()
         # frontmatter, parsed = parse_file(f)
 
-        output_xml = f.parents[1] / "output" / f"{f.stem}.xml"
+        output_xml = input_dir / f"{f.stem}-processed.xml"
 
         with output_xml.open("w") as fp:
             doc = E.document()
