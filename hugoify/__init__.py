@@ -23,7 +23,7 @@ def main():
         print("Exiting because there are no files to process...")
         sys.exit(0)
 
-    for f in input_dir.glob("*.xml"):
+    for f in input_dir.glob("*docs.xml"):
         print(f"Processing {str(f)}...")
 
         tree = etree.parse(
@@ -72,6 +72,8 @@ def main():
             fp.write("\n")
 
         print()
+
+    htmlify(input_dir, output_dir)
 
     sys.exit(0)
 

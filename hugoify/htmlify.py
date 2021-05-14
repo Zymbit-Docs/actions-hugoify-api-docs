@@ -66,7 +66,9 @@ class Renderer:
 
         self.input_file = input_file.resolve()
 
-        self.rendered_file = output_dir / f"{self.input_file.stem}.md"
+        self.rendered_file = (
+            output_dir / f"{self.input_file.stem.replace('-processed', '')}.md"
+        )
         # self.rendered_lines = []
         self.rendered_trees = []
 
@@ -177,13 +179,14 @@ class Renderer:
 
             with DocTree("h", **d) as d_h:
                 title_node = Node("h", section_title, classes="include-toc", **d_h)
-                node.append(title_node)
+                # node.append(title_node)
 
                 # with DocTree(None, increment_heading=True, **d) as d_contents:
                 for child in root:
                     self.parse_tree(node, child, context=d_h)
 
                 self.rendered_trees.append(node)
+                self.rendered_trees.append(title_node)
 
         # self.toc[section_title] = current_toc
 
