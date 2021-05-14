@@ -10,12 +10,14 @@ RUN curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/get-
     && python /tmp/get-poetry.py > /dev/null \
     && poetry config virtualenvs.in-project true
 
-RUN poetry install
+RUN poetry install \
+    && poetry build -f wheel \
+    && python3 -m pip install --target=/app ./dist/hugoify*.whl
 
 # RUN pip install --target=/app --no-cache-dir ruamel.yaml lxml
 
 # CMD ["/app/hugoify/main.py"]
 ENV INPUT_RAWPATH="input" \
     INPUT_OUTPUTPATH="output"
-# WORKDIR /github/workspace
-ENTRYPOINT ["/etc/poetry/bin/poetry", "run", "hugoify"]
+WORKDIR /github/workspace
+ENTRYPOINT ["/app/bin/hugoify"]
