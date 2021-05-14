@@ -1,23 +1,26 @@
 FROM python:3 AS builder
-COPY . /app
-WORKDIR /app
+COPY . /src
+WORKDIR /src
 
-ENV PATH="/etc/poetry/bin:/app/hugoify:${PATH}"
-ENV PYTHONPATH /app/hugoify:/app
+ENV PATH="/etc/poetry/bin:/hugoify:${PATH}"
+ENV PYTHONPATH /src
 ENV POETRY_HOME=/etc/poetry
 
-RUN curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py --output /tmp/get-poetry.py \
-    && python /tmp/get-poetry.py > /dev/null \
-    && poetry config virtualenvs.in-project true
-
-RUN poetry install \
-    && poetry build -f wheel \
-    && python3 -m pip install --target=/app ./dist/hugoify*.whl
+RUN ./install_hugoify.sh
 
 # RUN pip install --target=/app --no-cache-dir ruamel.yaml lxml
 
 # CMD ["/app/hugoify/main.py"]
+# WORKDIR /github/workspace
+# ENTRYPOINT ["/app/bin/hugoify"]
+
+FROM python:3
+
+COPY --from=builder /src/dist/*.whl /
+
+RUN pip install /hugoify*.whl
+
 ENV INPUT_RAWPATH="input" \
     INPUT_OUTPUTPATH="output"
 WORKDIR /github/workspace
-ENTRYPOINT ["/app/bin/hugoify"]
+ENTRYPOINT ["/usr/local/bin/hugoify"]
