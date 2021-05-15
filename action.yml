@@ -10,4 +10,4 @@ inputs:
     default: "./content/api/"
 runs:
   using: "docker"
-  image: "ghcr.io/zymbit-docs/hugoify-api-docs:latest"
+  image: "docker://ghcr.io/zymbit-docs/hugoify-api-docs:latest"
