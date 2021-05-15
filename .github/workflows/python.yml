@@ -23,7 +23,7 @@ jobs:
       - name: Lint Python code
         run: |
           if ! black --check . ; then
-            black --diff
+            black --diff .
           fi
 
 
