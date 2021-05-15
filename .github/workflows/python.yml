@@ -21,7 +21,11 @@ jobs:
         run: pip install black
 
       - name: Lint Python code
-        run: black --check .
+        run: |
+          if ! black --check . ; then
+            black --diff
+          fi
+
 
   lint_docker:
     name: Lint Dockerfile
