@@ -19,6 +19,8 @@ jobs:
 
       - name: Publish built image
         id: publish
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           echo ${GITHUB_TOKEN} | docker login ghcr.io -u zymbit-docs --password-stdin
 
