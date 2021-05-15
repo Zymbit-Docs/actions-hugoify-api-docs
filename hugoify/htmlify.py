@@ -66,9 +66,10 @@ class Renderer:
 
         self.input_file = input_file.resolve()
 
-        self.rendered_file = (
-            output_dir / f"{self.input_file.stem.replace('-processed', '')}.md"
-        )
+        output_filename = self.input_file.stem.replace("-processed", "")
+        output_filename = output_filename.replace("GENERATED_", "")
+
+        self.rendered_file = output_dir / f"{output_filename}.md"
         # self.rendered_lines = []
         self.rendered_trees = []
 

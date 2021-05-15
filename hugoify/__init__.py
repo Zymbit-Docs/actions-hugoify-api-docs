@@ -16,12 +16,16 @@ from .htmlify import htmlify
 
 
 def main():
-    input_dir = Path(os.environ["INPUT_RAWPATH"])
-    output_dir = Path(os.environ["INPUT_OUTPUTPATH"])
+    input_dir = Path(os.getenv("INPUT_RAWPATH", "content/GENERATED/"))
+    output_dir = Path(os.getenv("INPUT_OUTPUTPATH", "content/api/"))
 
     if not input_dir.exists():
         print("Exiting because there are no files to process...")
+        print(f"{input_dir.resolve()} does not exist!")
         sys.exit(0)
+
+    print(f"Processing content of {input_dir.resolve()}...")
+    print(f"Outputting results to {output_dir.resolve()}...")
 
     for f in input_dir.glob("*docs.xml"):
         print(f"Processing {str(f)}...")
@@ -318,6 +322,9 @@ class CodeFile(object):
                 elem.set("classes", elem_classes.replace("cpp", "c"))
 
         for elem in self.root.xpath(".//desc_signature/target"):
+            if not elem.tail:
+                continue
+
             return_elem = E.desc_returns(elem.tail.strip())
             parent = elem.find("..")
             parent.replace(elem, return_elem)
@@ -538,7 +545,11 @@ class CodeFile(object):
             self.root.remove(wrapper)
 
         for elem in self.root.xpath(".//desc_signature/target"):
-            return_elem = E.desc_returns(elem.tail.strip())
+            if not elem.tail:
+                continue
+
+            elem.tail = elem.tail.strip()
+            return_elem = E.desc_returns(elem.tail)
             parent = elem.find("..")
             parent.replace(elem, return_elem)
 
@@ -610,9 +621,10 @@ class CodeFile(object):
             return type_elem
 
         for elem in self.root.xpath(".//desc_parameter[text()!='']"):
-            param_type = elem.text.strip()
-            if not len(param_type):
+            if not elem.text or not len(elem.text):
                 continue
+
+            param_type = elem.text.strip()
 
             type_elem = add_desc_type(elem, param_type)
 
@@ -882,7 +894,7 @@ class CodeFile(object):
             sub_content = elem.find("./desc_content")
             if len(sub_content):
                 continue
-            if sub_content.text and len(sub_context.text.strip()):
+            if sub_content.text and len(sub_content.text.strip()):
                 continue
 
             elem.remove(sub_content)

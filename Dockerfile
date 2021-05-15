@@ -20,7 +20,7 @@ COPY --from=builder /src/dist/*.whl /
 
 RUN pip install /hugoify*.whl
 
-ENV INPUT_RAWPATH="input" \
-    INPUT_OUTPUTPATH="output"
+ENV INPUT_RAWPATH="content/GENERATED"
+ENV INPUT_OUTPUTPATH="content/api"
 WORKDIR /github/workspace
 ENTRYPOINT ["/usr/local/bin/hugoify"]
