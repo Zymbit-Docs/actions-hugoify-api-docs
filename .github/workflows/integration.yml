@@ -11,7 +11,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@master
+
       - name: Image build test
         id: buildtest
         run: |
           docker build -t zymbit-docs/hugoify-api-docs:latest .
+
+      - name: Publish built image
+        id: publish
+        run: |
+          echo ${GITHUB_TOKEN} | docker login ghcr.io -u zymbit-docs --password-stdin
+
+          docker tag zymbit-docs/hugoify-api-docs:latest ghcr.io/zymbit-docs/hugoify-api-docs:latest
+          docker push ghcr.io/zymbit-docs/hugoify-api-docs:latest

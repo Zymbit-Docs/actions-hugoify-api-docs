@@ -14,13 +14,14 @@ RUN ./install_hugoify.sh
 # WORKDIR /github/workspace
 # ENTRYPOINT ["/app/bin/hugoify"]
 
-FROM python:3
+FROM python:3-slim
 
 COPY --from=builder /src/dist/*.whl /
 
-RUN pip install /hugoify*.whl
+RUN python -m pip install --no-cache-dir /hugoify*.whl \
+ && rm /hugoify*.whl
 
 ENV INPUT_RAWPATH="content/GENERATED"
 ENV INPUT_OUTPUTPATH="content/api"
 WORKDIR /github/workspace
-ENTRYPOINT ["/usr/local/bin/hugoify"]
+CMD ["/usr/local/bin/hugoify"]
