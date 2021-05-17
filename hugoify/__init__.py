@@ -70,9 +70,11 @@ def main():
             title_element = E.document_title(doc.get("title"))
             doc.append(title_element)
 
-            doc.extend(root.find("./section").getchildren())
-            etree.indent(doc, space="    ", level=0)
-            fp.write(etree.tostring(doc, encoding="unicode"))
+            children = root.find("./section").getchildren()
+            doc.extend(children)
+            etree.indent(doc, space="    ", level=1)
+            doc_text = etree.tostring(doc, encoding="unicode")
+            fp.write(doc_text)
             fp.write("\n")
 
         print()
@@ -157,7 +159,7 @@ class CodeFile(object):
         for elem in self.root.xpath(
             ".//desc[@objtype='method']/desc_content/field_list/field[./field_name[text()='Parameters']]/field_body"
         ):
-            if (p := elem.xpath("./paragraph")) :
+            if p := elem.xpath("./paragraph"):
                 if len(p) != 1:
                     raise RuntimeError("Unknown parsing condition!")
 

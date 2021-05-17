@@ -16,15 +16,12 @@ from contextlib import contextmanager
 from collections.abc import MutableMapping
 from .parser_utils import DocTree, Node
 
+import re
 from re import sub as re_sub
 
+from hashlib import md5
+
 from itertools import chain
-
-# if not sys.warnoptions:
-#     import warnings
-
-#     warnings.simplefilter("once")
-
 import warnings
 
 warnings.filterwarnings("once", category=RuntimeWarning)
@@ -92,22 +89,130 @@ class Renderer:
 
                 raw = block.raw()
 
-                # for subnode in raw.xpath(".//*[contains(@class, 'include-toc')]"):
-                #     name_node = subnode.xpath(
-                #         "./span[contains(@class, 'name') and not(contains(@class, 'addname'))]"
-                #     )[0]
-                #     print(subnode.tag, "\t", name_node.text)
-
-                etree.indent(raw, space="    ", level=0)
-
                 for elem in raw.xpath(".//span[@class='pointer-ref']"):
                     elem.tail = elem.tail.strip()
 
-                text = etree.tostring(raw).decode("utf-8")
+                for child in raw.getchildren():
+                    dumped = etree.tostring(
+                        child, encoding="unicode", pretty_print=True
+                    )
+                    reparsed = etree.fromstring(
+                        dumped, parser=etree.XMLParser(recover=True)
+                    )
+
+                    for subchild in reparsed.getchildren():
+                        etree.indent(subchild, space="  ", level=0)
+
+                    raw.replace(child, reparsed)
+
+                etree.indent(raw, space="", level=0)
+
+                for header in raw.xpath(".//*[contains(@class, 'include-toc')]"):
+                    header.tail = f"\n{header.tail}"
+
+                    parent = header.getparent()
+                    if parent.index(header) == 0:
+                        parent.text = f"\n{parent.text}"
+
+                    self.strip_newlines(header)
+
+                    heading_level = header.tag.replace("h", "")
+                    children_line = deepcopy(header.getchildren())
+
+                    heading_line = E.span()
+                    heading_line.text = header.text.strip()
+                    heading_line.set(
+                        "class",
+                        " ".join([f"markdown-h{heading_level}", header.get("class")]),
+                    )
+                    heading_line.extend(children_line)
+
+                    self.reparse_heading_line(heading_line)
+
+                    header.addnext(heading_line)
+                    header.getparent().replace(
+                        header, E(f"heading_level_{heading_level}")
+                    )
+
+                text = etree.tostring(
+                    raw,
+                    # pretty_print=True,
+                ).decode("utf-8")
 
                 text = self.tidy_text(text)
+                text = self.replace_headers(text)
                 fp.write(text)
                 fp.write("\n")
+
+                # etree.indent(raw, space="  ")
+
+    def reparse_heading_line(self, line):
+        """Add display elements to heading line.
+
+        The XML that is fed to this class doesn't have structural elements necessary
+        for HTML display, such as parentheses around the parameter list of a
+        method or commas between each parameter. This method adds those elements
+        to the header lines.
+        """
+        param_list = line.xpath("./span[contains(@class, 'param-list')]")
+
+        if len(param_list):
+            param_list = param_list[0]
+        else:
+            return
+
+        opener_elem = E.span("( ")
+        opener_elem.set("class", "param-paren paren-open")
+        param_list.insert(0, opener_elem)
+
+        closer_elem = E.span(" )")
+        closer_elem.set("class", "param-paren paren-close")
+        param_list.append(closer_elem)
+
+        for elem in line.iter(tag="span"):
+            if elem.text is not None:
+                elem.text = elem.text.replace("_", "\_")
+
+        for param in param_list.xpath("./span[@class='param']")[:-1]:
+            old_tail = ""
+            if param.tail is not None:
+                old_tail = param.tail
+
+            param.tail = f", {old_tail}"
+
+        for elem in param_list.xpath(".//span[@class='default-val']"):
+            prev_elem = elem.getprevious()
+            prev_elem.tail = " = "
+
+            if elem.text.startswith("- "):
+                elem.text = elem.text.replace("- ", "-")
+
+    def replace_headers(self, text):
+
+        header_string = r"<heading_level_(?P<heading_level>\d)/>"
+        matches = re.finditer(header_string, text)
+
+        new_text = []
+        last_match_end = 0
+        for match in matches:
+            new_text.append(text[last_match_end : match.start()])
+            last_match_end = match.end()
+
+            match_dict = match.groupdict()
+            new_header = f'{"#" * int(match_dict["heading_level"])} '
+
+            new_text.append(new_header)
+
+        new_text.append(text[last_match_end:])
+        return "".join(new_text)
+
+    def strip_newlines(self, elem):
+        elem.text = elem.text.strip()
+        for subchild in elem.getchildren():
+            subchild.tail = subchild.tail.strip()
+
+            if len(subchild.getchildren()):
+                self.strip_newlines(subchild)
 
     # def stringify(self, raw):
     #     parts = (
@@ -171,25 +276,20 @@ class Renderer:
             section_title = False
             return
 
-        # current_toc = {}
-
         with DocTree("div", opening_newline=True) as d:
             node = Node("div", **d)
             node.set("class", "api-docs")
-            # d.add_hang(node)
 
             with DocTree("h", **d) as d_h:
-                title_node = Node("h", section_title, classes="include-toc", **d_h)
-                # node.append(title_node)
+                title_node = Node("h", section_title, **d_h)
+                title_node.set("class", "include-toc")
+                node.append(title_node)
 
                 # with DocTree(None, increment_heading=True, **d) as d_contents:
                 for child in root:
                     self.parse_tree(node, child, context=d_h)
 
                 self.rendered_trees.append(node)
-                self.rendered_trees.append(title_node)
-
-        # self.toc[section_title] = current_toc
 
     def extract_tree(self, node, subfunction: str = None, context=None, **kwargs):
         tag = node.tag
