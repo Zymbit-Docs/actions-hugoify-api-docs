@@ -128,6 +128,7 @@ class Renderer:
                     heading_line.extend(children_line)
 
                     self.reparse_heading_line(heading_line)
+                    self.generate_heading_id(heading_line)
 
                     header.addnext(heading_line)
                     header.getparent().replace(
@@ -205,6 +206,70 @@ class Renderer:
 
         new_text.append(text[last_match_end:])
         return "".join(new_text)
+
+    def generate_heading_id(self, line):
+        """Add a heading ID to each header.
+
+        For permalinks to sections and within the table of contents, Hugo will
+        automatically generate an ID for the anchor link. Because the full content
+        of the line can be very long for methods with many parameters, we can
+        generate our own simplified heading ID to append to each line, which
+        Hugo will then use.
+        """
+
+        # Get the non-parameter elements of the function signature. This can
+        # include the return type, as well as the function's name.
+        name_elems = line.xpath("./span[not(contains(@class, 'param-list'))]")
+        id_string = []
+        for elem in name_elems:
+            if elem.text is not None:
+
+                # We can simplify the link names by removing any spaces or underscores
+                # from the individual components of the function signature.
+                id_elem = elem.text.strip()
+                id_elem = id_elem.replace(" ", "")
+                id_elem = id_elem.replace("_", "")
+                id_elem = id_elem.replace("\\", "")
+                id_string.append(id_elem)
+
+        # Join the primary components of the heading ID (e.g. return type and name)
+        # with underscores.
+        heading_id = "_".join(id_string)
+
+        # Get the list of parameter elements defined in this function/method
+        # signature. We will need to use these to differentiate between
+        # overloaded functions that share a name and return type.
+        param_list = line.xpath("./span[contains(@class, 'param-list')]")
+
+        if len(param_list):
+            param_list = param_list[0]
+        else:
+            return
+        param_str_elems = param_list
+
+        # We are taking the first four characters from each sub-element in the parameter
+        # list (e.g. the first four characters of an argument type, name, etc.),
+        # combining those fragments with underscores, and hashing the result. Then,
+        # we append the first eight characters of the resulting hash to the heading ID.
+        #
+        # This is done because the full parameter list can be quite long, but the first
+        # four characters of each elem combined and hashed results in a string that
+        # will be unique for that particular set of parameters.
+        param_str = "_".join(
+            [_.strip()[:4] for _ in param_list.itertext() if len(_.strip())]
+        )
+        param_str = md5(param_str.encode("utf-8")).hexdigest()[:8]
+        heading_id = "_".join(id_string + [param_str])
+        heading_id = heading_id.replace("*_", "")
+
+        old_tail = ""
+        if line.tail is not None:
+            old_tail = line.tail
+
+        classes = line.get("class")
+        del line.attrib["class"]
+
+        line.tail = f' {{id="{heading_id}" class="{classes}"}}{old_tail}'
 
     def strip_newlines(self, elem):
         elem.text = elem.text.strip()
