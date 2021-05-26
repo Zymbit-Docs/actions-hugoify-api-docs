@@ -92,6 +92,8 @@ class Renderer:
                 for elem in raw.xpath(".//span[@class='pointer-ref']"):
                     elem.tail = elem.tail.strip()
 
+                    # ugly_dump(elem)
+
                 for child in raw.getchildren():
                     dumped = etree.tostring(
                         child, encoding="unicode", pretty_print=True
@@ -107,6 +109,17 @@ class Renderer:
 
                 etree.indent(raw, space="", level=0)
 
+                for subelem in raw.iter():
+                    if subelem.text is None:
+                        subelem.text = ""
+
+                # before_reparse = (
+                #     self.rendered_file.parent
+                #     / self.rendered_file.name.replace(".md", "unreparsed.md")
+                # )
+                # with before_reparse.open("w") as new_fp:
+                #     new_fp.write(etree.tostring(raw).decode("utf-8"))
+
                 for header in raw.xpath(".//*[contains(@class, 'include-toc')]"):
                     header.tail = f"\n{header.tail}"
 
@@ -118,6 +131,8 @@ class Renderer:
 
                     heading_level = header.tag.replace("h", "")
                     children_line = deepcopy(header.getchildren())
+                    # for elem in children_line:
+                    #     ugly_dump(elem)
 
                     heading_line = E.span()
                     heading_line.text = header.text.strip()
@@ -135,6 +150,14 @@ class Renderer:
                         header, E(f"heading_level_{heading_level}")
                     )
 
+                self.reparse_misc(raw)
+
+                # for subelem in raw.iter():
+                #     if subelem.tag.find("heading_level") > -1:
+                #         continue
+                #     if subelem.text is None:
+                #         subelem.text = ""
+
                 text = etree.tostring(
                     raw,
                     # pretty_print=True,
@@ -146,6 +169,95 @@ class Renderer:
                 fp.write("\n")
 
                 # etree.indent(raw, space="  ")
+
+    @staticmethod
+    def add_space_to_tail(elem):
+        if elem.tail is None:
+            elem.tail = " "
+        else:
+            elem.tail = f" {elem.tail}"
+
+    @staticmethod
+    def rm_space_from_tail(elem):
+        if elem.tail is None:
+            elem.tail = ""
+        else:
+            elem.tail = elem.tail.lstrip(" ")
+
+    def reparse_misc(self, raw):
+
+        for annotation in raw.xpath(".//span[contains(@class, 'annotation')]"):
+            self.add_space_to_tail(annotation)
+
+        for open_paren in raw.xpath(
+            ".//span[contains(@class, 'param-paren') and contains(@class, 'paren-open')]"
+        ):
+            if open_paren.getnext().get("class").find("paren-close") == -1:
+                continue
+            if open_paren.tail is None:
+                continue
+
+            open_paren.tail = open_paren.tail.lstrip(" ")
+
+        for param_elem in raw.xpath(
+            ".//span[contains(@class, 'param') and not(contains(@class, 'param-'))]"
+        ):
+            for param_name in param_elem.xpath("./span[contains(@class, 'name')]"):
+                if (next_param := param_name.getnext()) is not None:
+                    continue
+
+                self.rm_space_from_tail(param_name)
+
+        for param_list in raw.xpath(".//div[contains(@class, 'parameters')]"):
+            for param_item in param_list.xpath(".//li[contains(@class, 'param-item')]"):
+                for param_type in param_item.xpath("./span[@class='type']"):
+                    if param_type.text is None or param_type.text == "":
+                        continue
+                    if param_type.text == "TYPE":
+                        param_type.text = ""
+                        continue
+
+                    opener_elem = E.span("(")
+                    opener_elem.set("class", "type-paren paren-open")
+                    opener_elem.tail = ""
+                    param_type.addprevious(opener_elem)
+
+                    closer_elem = E.span(")")
+                    closer_elem.set("class", "type-paren paren-close")
+                    param_type.addnext(closer_elem)
+
+                for param_desc in param_item.xpath("./span[@class='description']"):
+                    if (param_desc.text is None or param_desc.text == "") and not len(
+                        param_desc.getchildren()
+                    ):
+                        continue
+
+                    divider_elem = E.span(" — ")
+                    divider_elem.set("class", "param-desc-divider")
+                    param_desc.addprevious(divider_elem)
+
+                    prev_elem = divider_elem.getprevious()
+                    if prev_elem.tail is not None:
+                        prev_elem.tail = prev_elem.tail.rstrip()
+
+        for return_val in raw.xpath(".//div[contains(@class, 'returns')]"):
+            for return_type in return_val.xpath(
+                ".//span[contains(@class, 'return_type')]"
+            ):
+                if (return_type.text is None or return_type.text == "") and not len(
+                    return_type.getchildren()
+                ):
+                    continue
+                next_elem = return_type.getnext()
+                if next_elem and (next_elem.text is None or next_elem.text == ""):
+                    continue
+
+                divider_elem = E.span(" — ")
+                divider_elem.set("class", "param-desc-divider")
+                return_type.addnext(divider_elem)
+
+                if return_type.tail is not None:
+                    return_type.tail = return_type.tail.rstrip()
 
     def reparse_heading_line(self, line):
         """Add display elements to heading line.
@@ -162,24 +274,55 @@ class Renderer:
         else:
             return
 
-        opener_elem = E.span("( ")
+        opener_elem = E.span("(")
         opener_elem.set("class", "param-paren paren-open")
+        opener_elem.tail = " "
         param_list.insert(0, opener_elem)
 
-        closer_elem = E.span(" )")
+        closer_elem = E.span(")")
         closer_elem.set("class", "param-paren paren-close")
         param_list.append(closer_elem)
+        prev_elem = closer_elem.getprevious()
+
+        old_tail = ""
+        if prev_elem.tail is not None:
+            old_tail = prev_elem.tail
+
+        prev_elem.tail = f"{old_tail} "
 
         for elem in line.iter(tag="span"):
             if elem.text is not None:
                 elem.text = elem.text.replace("_", "\_")
+                elem.text = elem.text.replace("*", "\*")
 
-        for param in param_list.xpath("./span[@class='param']")[:-1]:
-            old_tail = ""
+        for param in param_list.xpath("./span[@class='param']"):
+            # old_tail = ""
             if param.tail is not None:
-                old_tail = param.tail
+                param.tail = param.tail.strip()
 
-            param.tail = f", {old_tail}"
+            for field in {"annotation", "type", "pointer-ref", "name"}:
+                if (elem := param.find(f"./span[@class='{field}']")) is not None:
+                    if elem.text is not None:
+                        old_tail = ""
+                        if elem.tail is not None:
+                            old_tail = elem.tail
+
+                        elem.tail = f"{old_tail} "
+
+            param_tail = E.span(", ")
+            param_tail.set("class", "param-divider")
+            # param.tail = f", {old_tail}"
+
+            param_wrapper = E.span()
+            param_wrapper.set("class", "param-item-wrapper")
+
+            param_wrapper.append(deepcopy(param))
+
+            if (next_elem := param.getnext()) is not None:
+                if next_elem.get("class") == "param":
+                    param_wrapper.append(param_tail)
+
+            param.getparent().replace(param, param_wrapper)
 
         for elem in param_list.xpath(".//span[@class='default-val']"):
             prev_elem = elem.getprevious()
@@ -187,6 +330,25 @@ class Renderer:
 
             if elem.text.startswith("- "):
                 elem.text = elem.text.replace("- ", "-")
+
+        for field in {"returns", "pointer-ref", "name"}:
+            if (elem := line.find(f"./span[@class='{field}']")) is not None:
+                if elem.text is not None:
+                    old_tail = ""
+                    if elem.tail is not None:
+                        old_tail = elem.tail
+
+                    elem.tail = f"{old_tail} "
+
+        for param in param_list.xpath("./span[@class='param']"):
+            for field in {"annotation", "type", "name"}:
+                if (elem := param.find(f"./span[@class='{field}']")) is not None:
+                    if elem.text is None:
+                        continue
+                    if elem.tail is not None and elem.tail != "":
+                        continue
+
+                    elem.tail = " "
 
     def replace_headers(self, text):
 
@@ -259,8 +421,8 @@ class Renderer:
             [_.strip()[:4] for _ in param_list.itertext() if len(_.strip())]
         )
         param_str = md5(param_str.encode("utf-8")).hexdigest()[:8]
-        heading_id = "_".join(id_string + [param_str])
-        heading_id = heading_id.replace("*_", "")
+        heading_id = "-".join(id_string + [param_str])
+        heading_id = heading_id.replace("*-", "")
 
         old_tail = ""
         if line.tail is not None:
@@ -273,6 +435,10 @@ class Renderer:
 
     def strip_newlines(self, elem):
         elem.text = elem.text.strip()
+        # if elem.text is None:
+        #     elem.text = ""
+
+        # ugly_dump(elem)
         for subchild in elem.getchildren():
             subchild.tail = subchild.tail.strip()
 
@@ -341,6 +507,9 @@ class Renderer:
             section_title = False
             return
 
+        if (root.text is None or root.text == "") and not list(root):
+            return
+
         with DocTree("div", opening_newline=True) as d:
             node = Node("div", **d)
             node.set("class", "api-docs")
@@ -377,6 +546,10 @@ class Renderer:
         func_name = f"_parse_node_{tag}"
         parse_func = self.__get_parse_func(func_name)
         children = parse_func(node, context=context, **kwargs)
+
+        if children is not None:
+            if not children.text:
+                children.text = ""
 
         return children
 
@@ -417,7 +590,8 @@ class Renderer:
 
     def _parse_node_title_reference(self, node, context=None, **kwargs):
         with DocTree("span", **context) as d:
-            elem = Node("span", classes="title-reference", **d)
+            elem = Node("span", **d)
+            elem.set("class", "title-reference")
             parsed = self.parse_content(elem, node, context=d, **kwargs)
             return parsed
 

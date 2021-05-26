@@ -242,7 +242,7 @@ class Node(HtmlElement):
         elif type(classes) is str:
             self._classes.extend(classes.split(" "))
 
-        if (newlines := kwargs.get("newlines", False)) :
+        if newlines := kwargs.get("newlines", False):
             self._newlines = newlines
 
         if children is not None:
@@ -290,7 +290,7 @@ class Node(HtmlElement):
     def __text_setter(self, which, new_text):
         self.__dict__[which] = []
 
-        if new_text == "" or new_text is None:
+        if new_text is None:
             return
 
         if type(new_text) is str:
@@ -392,7 +392,7 @@ class Node(HtmlElement):
         # if self._indent_children:
         #     etree.indent(elem, space="    ", level=0)  # level=self.indent_level)
 
-        if (classes := self.class_list) :
+        if classes := self.class_list:
             elem.set("classes", classes)
 
         return elem
