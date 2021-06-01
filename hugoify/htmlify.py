@@ -134,11 +134,18 @@ class Renderer:
                     # for elem in children_line:
                     #     ugly_dump(elem)
 
+                    heading_line_classes = [
+                        f"markdown-h{heading_level}",
+                        header.get("class"),
+                    ]
+                    if header.getparent().get("class").find("attribute") > -1:
+                        heading_line_classes.append("attribute-signature")
+
                     heading_line = E.span()
                     heading_line.text = header.text.strip()
                     heading_line.set(
                         "class",
-                        " ".join([f"markdown-h{heading_level}", header.get("class")]),
+                        " ".join(heading_line_classes),
                     )
                     heading_line.extend(children_line)
 
@@ -258,6 +265,14 @@ class Renderer:
 
                 if return_type.tail is not None:
                     return_type.tail = return_type.tail.rstrip()
+
+        for returns_elem in raw.xpath(".//span[@class='returns']"):
+            # if returns_elem.getnext().get("class").find("name") == -1:
+            #     continue
+            # if open_paren.tail is None:
+            #     continue
+
+            returns_elem.tail = f"{returns_elem.tail} "
 
     def reparse_heading_line(self, line):
         """Add display elements to heading line.
