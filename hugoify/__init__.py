@@ -27,7 +27,7 @@ def main():
     print(f"Processing content of {input_dir.resolve()}...")
     print(f"Outputting results to {output_dir.resolve()}...")
 
-    for f in input_dir.glob("*docs.xml"):
+    for f in input_dir.glob("*_api.xml"):
         print(f"Processing {str(f)}...")
 
         tree = etree.parse(
