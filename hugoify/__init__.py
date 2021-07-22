@@ -60,20 +60,15 @@ def main():
             if contents.domain == CodeFile.DOMAIN_PY:
                 doc.set("api-lang", "python")
                 doc.set("title", "Python API Documentation")
-                doc.set("linkTitle", "Python")
             elif contents.domain == CodeFile.DOMAIN_CPP:
                 doc.set("api-lang", "cpp")
                 doc.set("title", "C++ API Documentation")
-                doc.set("linkTitle", "C++")
             elif contents.domain == CodeFile.DOMAIN_C:
                 doc.set("api-lang", "c")
                 doc.set("title", "C API Documentation")
-                doc.set("linkTitle", "C")
 
             title_element = E.document_title(doc.get("title"))
             doc.append(title_element)
-            linkTitle_element = E.document_linkTitle(doc.get("linkTitle"))
-            doc.append(linkTitle_element)
 
             children = root.find("./section").getchildren()
             doc.extend(children)
