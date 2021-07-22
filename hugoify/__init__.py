@@ -72,6 +72,8 @@ def main():
 
             title_element = E.document_title(doc.get("title"))
             doc.append(title_element)
+            linkTitle_element = E.document_linkTitle(doc.get("linkTitle"))
+            doc.append(linkTitle_element)
 
             children = root.find("./section").getchildren()
             doc.extend(children)
