@@ -11,6 +11,7 @@
 <xsl:template match="/document" name="frontmatter">
 ---
 title: <xsl:value-of select="document_title" />
+linkTitle: <xsl:value-of select="document_title" />
 description: <xsl:value-of select="section[@id='abstract']/paragraph[1]" />
 lastmod:
 draft: false
