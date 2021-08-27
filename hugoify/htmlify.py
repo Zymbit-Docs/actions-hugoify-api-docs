@@ -291,7 +291,7 @@ class Renderer:
 
         opener_elem = E.span("(")
         opener_elem.set("class", "param-paren paren-open")
-        opener_elem.tail = ""
+        opener_elem.tail = " "
         param_list.insert(0, opener_elem)
 
         closer_elem = E.span(")")
