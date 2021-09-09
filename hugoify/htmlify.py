@@ -51,13 +51,12 @@ def htmlify(input_dir, output_dir):
     # for f in output_dir.glob("python_docs.xml"):
     for f in input_dir.glob("*-processed.xml"):  # ("python_docs.xml", "cpp_docs.xml"):
         # f = output_dir / f
-
         renderer = Renderer(f, output_dir)
 
 
 class Renderer:
     def __init__(self, input_file, output_dir):
-        print(f"Processing {str(input_file)}...")
+        print(f"Rendering {str(input_file)} to Markdown/HTML...")
 
         # self.current_path = []
 
@@ -157,7 +156,7 @@ class Renderer:
                         header, E(f"heading_level_{heading_level}")
                     )
 
-                self.reparse_misc(raw)
+                # self.reparse_misc(raw)
 
                 # for subelem in raw.iter():
                 #     if subelem.tag.find("heading_level") > -1:
@@ -584,7 +583,7 @@ class Renderer:
         if parse_func is not None:
             return parse_func
 
-        warnings.warn(NotImplementedWarning(f"{func_name}"))
+        warnings.warn(f"{func_name}", NotImplementedWarning)
 
         if func_name.startswith("_parse_content_"):
             return lambda *args, **kwargs: ""
@@ -600,6 +599,12 @@ class Renderer:
     def _parse_node_emphasis(self, node, context=None, **kwargs):
         with DocTree("em", **context) as d:
             elem = Node("em", **d)
+            parsed = self.parse_content(elem, node, context=d, **kwargs)
+            return parsed
+
+    def _parse_node_literal(self, node, context=None, **kwargs):
+        with DocTree("code", **context) as d:
+            elem = Node("code", **d)
             parsed = self.parse_content(elem, node, context=d, **kwargs)
             return parsed
 
@@ -1156,128 +1161,3 @@ class Renderer:
             return new_elem
         else:
             return elem
-
-    # def __serialize_html(self, node, **kwargs):
-    #     new_tree = deepcopy(node)
-    #     serialized = etree.tostring(new_tree, encoding="utf-8").decode("utf-8")
-
-    #     return serialized
-
-    # def make_header(self, node, **kwargs):
-    #     heading_level = kwargs.get("heading_level", 2)
-
-    #     marks = "#" * heading_level
-    #     return TextNode(f"{marks} {node}", newlines=2)
-
-    # def _parse_node_enumerated_list(self, node, **kwargs):
-    #     new_lines = []
-    #     for item in node:
-    #         # print("Parsing content:", item)
-    #         item_content = self.get_node(item)
-    #         # print("Item content:", item_content)
-    #         line = f"1. {item_content}"
-
-    #         new_lines.append((line, 1))
-
-    #     # self.add_lines("", newlines=1)
-    #     new_lines.append(("", 1))
-
-    #     return new_lines
-
-    # def _parse_node_list_item(self, node, **kwargs):
-    #     return TextNode(self.parse_content(node, **kwargs), newlines=1)
-
-    # def _parse_node_desc_function(self, node, **kwargs):
-    #     self._parse_node_desc_method(node, **kwargs)
-
-    # def _parse_node_desc_method(self, node, **kwargs):
-    #     with DocPath(f"function", increment_heading=True, **kwargs) as d:
-    #         for child in node:
-    #             self.parse_node(child, **d)
-
-    # def _parse_node_desc_signature(self, node, **kwargs):
-
-    #     with DocPath(f"signature", **kwargs) as d:
-    #         node_wrapper = Node("span", classes=d.classes)
-
-    #         for item in node:
-    #             parsed_item = self.get_node(item, **d)
-    #             if parsed_item is not None:
-    #                 node_wrapper.append(parsed_item)
-
-    #         return TextNode(self.make_header(node_wrapper, **d), newlines=2)
-
-    # def _parse_node_desc_returns(self, node, **kwargs):
-    #     with DocPath("return-type", **kwargs) as d:
-    #         node_wrapper = Node("span", classes="return-type", render_empty=False)
-    #         node_wrapper.text = self.parse_content(node)
-    #         node_wrapper.tail = " "
-
-    #     return node_wrapper
-
-    # def _parse_node_desc_ref(self, node, **kwargs):
-    #     with DocPath("pointer-ref", **kwargs) as d:
-    #         node_wrapper = Node("span", classes="pointer-ref", render_empty=False)
-    #         node_wrapper.text = self.parse_content(node)
-
-    #     return node_wrapper
-
-    # def _parse_node_desc_annotation(self, node, **kwargs):
-    #     with DocPath("annotation", **kwargs) as d:
-    #         node_wrapper = Node("span", classes="annotation")
-    #         node_wrapper.text = self.parse_content(node)
-    #         node_wrapper.tail = " "
-
-    #     return node_wrapper
-
-    # def _parse_node_desc_addname(self, node, **kwargs):
-    #     with DocPath("addname", **kwargs) as d:
-    #         node_wrapper = Node("span", classes="addname")
-    #         node_wrapper.text = self.parse_content(node)
-
-    #     return node_wrapper
-
-    # def _parse_node_desc_name(self, node, **kwargs):
-    #     with DocPath("addname", **kwargs) as d:
-    #         node_wrapper = Node("span", classes="name")
-    #         node_wrapper.text = self.parse_content(node)
-
-    #     return node_wrapper
-
-    # def _parse_node_desc_content(self, node, **kwargs):
-    #     for elem in node:
-    #         self.parse_node(elem, **kwargs)
-
-    # def _parse_node_desc_parameterlist(self, node, **kwargs):
-    #     with DocPath("parameter-list", **kwargs) as d:
-    #         node_wrapper = Node("span", classes="parameter-list")
-    #         # node_wrapper.text = "("
-    #         # node_wrapper.text = self.parse_content(node)
-    #         node_wrapper.append(TextNode("("))
-    #         for item in node:
-    #             parsed_item = self.get_node(item, **d)
-    #             if parsed_item is not None:
-    #                 node_wrapper.append(parsed_item)
-    #         node_wrapper.append(TextNode(")"))
-
-    #     return node_wrapper
-
-    # def _parse_node_desc_parameter(self, node, **kwargs):
-    #     with DocPath("parameter", **kwargs) as d:
-    #         node_wrapper = Node("span", classes="param")
-
-    #         for item in node:
-    #             parsed_item = self.get_node(item, **d)
-    #             if parsed_item is not None:
-    #                 node_wrapper.append(parsed_item)
-    #                 node_wrapper.append(TextNode(","), not_last=True)
-
-    #         return node_wrapper
-
-    #     node_wrapper = Node("span", classes="param")
-    #     node_wrapper.text = self.parse_content(node)
-
-    # return node_wrapper
-
-    # def _parse_content_paragraph(self, node, **kwargs):
-    #     return TextNode(self.parse_content(node, **kwargs), newlines=1)

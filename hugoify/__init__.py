@@ -1,4 +1,3 @@
-# from .markdownify import main
 import os, sys
 from copy import deepcopy
 from datetime import datetime
@@ -11,11 +10,12 @@ from .utils import partial_dump, ugly_dump, ugly_dump_if_contains
 
 from pprint import pprint
 
-# from .xslt import xslt
 from .htmlify import htmlify
 
 
 def main():
+    # These default directories are intended to be overridden by environment
+    # variables passed by the GitHub Action.
     input_dir = Path(os.getenv("INPUT_RAWPATH", "content/GENERATED/"))
     output_dir = Path(os.getenv("INPUT_OUTPUTPATH", "content/api/"))
 
@@ -30,6 +30,8 @@ def main():
     for f in input_dir.glob("*_api.xml"):
         print(f"Processing {str(f)}...")
 
+        # Read in the entire XML tree from the file and make the best effort to
+        # build it and get the file's root node.
         tree = etree.parse(
             str(f), parser=etree.XMLParser(recover=True, remove_comments=True)
         )
