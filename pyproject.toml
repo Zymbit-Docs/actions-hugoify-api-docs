@@ -9,6 +9,8 @@ license = "MIT"
 python = "^3.9"
 "ruamel.yaml" = "^0.17.2"
 lxml = "^4.6.3"
+sphinxcontrib-napoleon = "^0.7"
+docutils = "^0.17.1"
 
 [tool.poetry.dev-dependencies]
 
