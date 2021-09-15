@@ -122,3 +122,13 @@ def ugly_dump_if_contains(tree, contains, count=1000):
         print("✖✖✖")
 
         return dumped
+
+
+def strtree(elem_tree, level: int = 0):
+    elem_copy = deepcopy(elem_tree)
+    etree.indent(elem_copy, space="    ", level=level)
+    return etree.tostring(elem_copy, encoding="unicode", pretty_print=True)
+
+
+def pptree(elem_tree):
+    print(strtree(elem_tree))
