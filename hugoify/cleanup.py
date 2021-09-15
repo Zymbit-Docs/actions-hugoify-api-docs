@@ -106,7 +106,7 @@ def extract_fields_from_verbatim(
 
     child_fields = list(xml_fields)
     if not len(child_fields):
-        return None
+        return []
 
     for child in child_fields:
         if child.tag not in {"docinfo"}:
@@ -119,19 +119,13 @@ def extract_fields_from_verbatim(
     for field_root in field_list:
         err_message = None
         if field_root.tag != "field":
-            # err_message = f"The source XML tag `{field_root.tag}` is unknown."
             raise UnknownTagError(field_root)
         elif field_root.get("classes") is None:
             raise UnknownTagError(field_root, f"The `classes` attribute is missing.")
-            # err_message = f"The `classes` attribute is missing."
         elif len(field_root.get("classes").split(" ")) > 1:
-            # err_message = f"The field root has multiples `classes` values."
             raise UnknownTagError(
                 field_root, f"The field root has multiples `classes` values."
             )
-
-        # if err_message:
-        #     raise RuntimeError(f"{err_message}\n\nNodes in error:\n{field_root}")
 
         field_class = field_root.get("classes")
         raw_field_name = field_root.find("field_name").text
@@ -150,18 +144,8 @@ def extract_fields_from_verbatim(
             processed_field["name"] = raw_param_name
         elif raw_field_name.startswith("type "):
             processed_field["type"] = "param_type"
-
             raw_param_name = raw_field_name.split(" ")[1]
             processed_field["name"] = raw_param_name
-
-            # for child_param in detaileddescription_root.iterchildren("param"):
-            #     if (declname := child_param.find("declname")) is not None:
-            #         if declname.text == raw_param_name:
-            #             # We've found the right param
-            #             param_type = field_root.find("field_body")[0].text
-            #             declname.addprevious(E("type", param_type))
-            #             # pptree(memberdef_root)
-            #             break
         elif raw_field_name.startswith("raises "):
             processed_field["type"] = "func_raises"
             raw_param_name = raw_field_name.split(" ")[1]
@@ -196,19 +180,6 @@ def extract_description_from_verbatim(
         DESCRIPTION_OF_ITEM
     """
 
-    # # We're started from inside the `verbatim` object, so the first thing
-    # # we should do if find the `detaileddescription` node's parent. This will
-    # # allow us to easily swap out that object with our own re-processed version.
-    # detaileddesc_elem = None
-    # detaileddesc_parent = None
-    # for elem in verbatim_obj.iterancestors(tag="detaileddescription"):
-    #     detaileddesc_elem = elem
-    #     detaileddesc_parent = detaileddesc_elem.getparent()
-    #     break
-
-    # if detaileddesc_parent is None:
-    #     return
-
     # When we converted from the source `verbatim` reStructuredText block, it added
     # XML nodes that differ from HTML tags. This will replace each XML element
     # with the appropriate HTML element.
@@ -219,8 +190,6 @@ def extract_description_from_verbatim(
     # still attached to the `xml_desc` variable).
     new_desc = E("longdescription")
     new_desc.extend(list(xml_desc))
-    # detaileddesc_parent.replace(detaileddesc_elem, new_desc)
-    # detaileddesc_elem.insert(0, new_desc)
     return new_desc
 
 
