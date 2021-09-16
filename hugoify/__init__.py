@@ -72,64 +72,15 @@ def main():
                     )
 
             print("-------------------------------------------------------")
-            last_element_appended = None
-            parameterlist_elems = detaileddesc_elem.xpath(".//parameterlist")
-            for elem in parameterlist_elems:
-                if elem.get("kind") not in {"param", "exception"}:
-                    raise UnknownTagError(
-                        elem,
-                        detaileddesc_elem,
-                        f"The `kind` value of {elem.get('kind')} is unknown.",
-                    )
+            unnest_parameterlist_elems(detaileddesc_elem)
+            unnest_simplesect_elems(detaileddesc_elem)
 
-                if last_element_appended is None:
-                    detaileddesc_elem.append(elem)
-                else:
-                    last_element_appended.addnext(elem)
-                last_element_appended = elem
-
-            simplesect_elems = detaileddesc_elem.xpath(".//simplesect")
-            for simplesect_elem in simplesect_elems:
-                simplesect_kind = simplesect_elem.get("kind")
-                if simplesect_kind in {"author", "version", "date", "copyright"}:
-                    continue
-                elif simplesect_kind not in {"note", "return"}:
-                    raise UnknownTagError(
-                        simplesect_elem,
-                        detaileddesc_elem,
-                        f"The `kind` value of {simplesect_kind} is unknown.",
-                    )
-
-                if simplesect_kind == "note":
-                    simplesect_elem.getparent().addnext(simplesect_elem)
-                elif simplesect_kind == "return":
-                    for ancestor in simplesect_elem.iterancestors(
-                        "detaileddescription"
-                    ):
-                        ancestor.append(simplesect_elem)
-
-                # pptree(simplesect_elem.getparent())
-
-            # description_para_elems = detaileddesc_elem.xpath(
-            #     "./para[position()=1] | ./para/preceding-sibling::para"
-            # )
-            all_intro_paras = []
-            for elem in detaileddesc_elem:
-                if elem.tag != "para":
-                    break
-
-                all_intro_paras.append(elem)
-
-            simplesect_description_elem = E("simplesect", kind="description")
-            detaileddesc_elem.insert(0, simplesect_description_elem)
-            simplesect_description_elem.extend(all_intro_paras)
-
-            if len(extracted_verbatim_desc) > 0:
-                # get_elem_by_xpath(detaileddesc_elem, "./simplesect[@kind='description']")
-                simplesect_description_elem.extend(extracted_verbatim_desc)
+            wrap_description_elems(detaileddesc_elem, extracted_verbatim_desc)
 
             for subelem in detaileddesc_elem:
                 cleanup.convert_doxygen_pseudohtml_nodes(subelem)
+
+            # merge_parameter_fields(detaileddesc_elem, extracted_verbatim_fields)
 
         with output_xml.open("w") as fp:
 
@@ -137,6 +88,67 @@ def main():
             doc_text = etree.tostring(root_node, encoding="unicode")
             fp.write(doc_text)
             fp.write("\n")
+
+
+# def merge_parameter_fields(detaileddesc_elem, verbatim_fields):
+#     # pprint(verbatim_fields)
+
+#     parent_elem = detaileddesc_elem
+
+
+def unnest_parameterlist_elems(detaileddesc_elem):
+    last_element_appended = None
+    parameterlist_elems = detaileddesc_elem.xpath(".//parameterlist")
+    for elem in parameterlist_elems:
+        if elem.get("kind") not in {"param", "exception"}:
+            raise UnknownTagError(
+                elem,
+                detaileddesc_elem,
+                f"The `kind` value of {elem.get('kind')} is unknown.",
+            )
+
+        if last_element_appended is None:
+            detaileddesc_elem.append(elem)
+        else:
+            last_element_appended.addnext(elem)
+        last_element_appended = elem
+
+
+def unnest_simplesect_elems(detaileddesc_elem):
+    simplesect_elems = detaileddesc_elem.xpath(".//simplesect")
+    for simplesect_elem in simplesect_elems:
+        simplesect_kind = simplesect_elem.get("kind")
+        if simplesect_kind in {"author", "version", "date", "copyright"}:
+            continue
+        elif simplesect_kind not in {"note", "return"}:
+            raise UnknownTagError(
+                simplesect_elem,
+                detaileddesc_elem,
+                f"The `kind` value of {simplesect_kind} is unknown.",
+            )
+
+        if simplesect_kind == "note":
+            simplesect_elem.getparent().addnext(simplesect_elem)
+        elif simplesect_kind == "return":
+            for ancestor in simplesect_elem.iterancestors("detaileddescription"):
+                ancestor.append(simplesect_elem)
+
+
+def wrap_description_elems(detaileddesc_elem, extracted_verbatim_desc):
+    all_intro_paras = []
+    for elem in detaileddesc_elem:
+        if elem.tag != "para":
+            break
+
+        all_intro_paras.append(elem)
+
+    simplesect_description_elem = E("simplesect", kind="description")
+    detaileddesc_elem.insert(0, simplesect_description_elem)
+    simplesect_description_elem.extend(all_intro_paras)
+
+    if len(extracted_verbatim_desc) > 0:
+        # get_elem_by_xpath(detaileddesc_elem, "./simplesect[@kind='description']")
+        simplesect_description_elem.extend(extracted_verbatim_desc)
 
 
 if __name__ == "__main__":
