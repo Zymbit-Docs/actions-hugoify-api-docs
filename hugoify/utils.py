@@ -132,3 +132,40 @@ def strtree(elem_tree, level: int = 0):
 
 def pptree(elem_tree):
     print(strtree(elem_tree))
+
+
+def get_elem_by_xpath(root_elem: etree._Element, xpath_str: str) -> etree._Element:
+    xpath_results = root_elem.xpath(xpath_str)
+
+    if len(xpath_results) == 0:
+        return None
+
+    if len(xpath_results) > 1:
+        raise RuntimeError(
+            f"The XPath `{xpath_str}` under the <{root_elem.tag}> tag returned"
+            f" more than one element."
+        )
+
+    return xpath_results[0]
+
+
+def remove_node(elem: etree._Element):
+    parent = elem.getparent()
+    previous = elem.getprevious()
+
+    elem_tail = elem.tail if elem.tail is not None else ""
+    if len(elem_tail.strip()) > 0:
+        if previous is not None:
+            if not previous.tail:
+                previous.tail = elem_tail
+            elif previous.tail.strip() == "":
+                previous.tail = f" {elem_tail}{previous.tail}"
+            else:
+                previous.tail = f"{previous.tail.strip()} {elem_tail}"
+        else:
+            if not parent.text:
+                parent.text = elem_tail
+            else:
+                parent.text = f"{parent.text} {elem_tail}"
+
+    parent.remove(elem)
