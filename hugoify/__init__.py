@@ -148,8 +148,7 @@ class CodeFile(object):
 
     def preparser_format(self):
         for elem in self.root.xpath(".//paragraph"):
-            #if len(elem) or not elem.text:
-            if len(elem):
+            if len(elem) or not elem.text:
                 continue
 
             lines = elem.text.split("\n")
