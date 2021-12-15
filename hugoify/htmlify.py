@@ -9,12 +9,12 @@ from copy import deepcopy
 
 from pprint import pprint
 
-from utils import partial_dump, ugly_dump, verbose_dump, unserialize, _reserialize
+from .utils import partial_dump, ugly_dump, verbose_dump, unserialize, _reserialize
 
 from typing import Union, List
 from contextlib import contextmanager
 from collections.abc import MutableMapping
-from parser_utils import DocTree, Node
+from .parser_utils import DocTree, Node
 
 import re
 from re import sub as re_sub

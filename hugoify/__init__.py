@@ -1,4 +1,3 @@
-
 # from .markdownify import main
 import os, sys
 from copy import deepcopy
@@ -7,18 +6,18 @@ from pathlib import Path
 from lxml import etree
 from lxml.builder import E
 
-from utils import generate_frontmatter
-from utils import partial_dump, ugly_dump, ugly_dump_if_contains
+from .utils import generate_frontmatter
+from .utils import partial_dump, ugly_dump, ugly_dump_if_contains
 
 from pprint import pprint
 
 # from .xslt import xslt
-from htmlify import htmlify
+from .htmlify import htmlify
 
 
 def main():
-    input_dir = Path(os.getenv("INPUT_RAWPATH", "/home/bguilfoyle/docs/content/GENERATED/"))
-    output_dir = Path(os.getenv("INPUT_OUTPUTPATH", "/home/bguilfoyle/docs/content/api/"))
+    input_dir = Path(os.getenv("INPUT_RAWPATH", "content/GENERATED/"))
+    output_dir = Path(os.getenv("INPUT_OUTPUTPATH", "content/api/"))
 
     if not input_dir.exists():
         print("Exiting because there are no files to process...")
