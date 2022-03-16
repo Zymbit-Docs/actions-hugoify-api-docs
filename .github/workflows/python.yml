@@ -13,7 +13,7 @@ jobs:
       - name: Set up latest version of Python 3
         uses: actions/setup-python@v1
         with:
-          python-version: "3.x"
+          python-version: "3.9"
 
       - uses: actions/checkout@v1
 
