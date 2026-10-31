@@ -10,4 +10,6 @@ inputs:
     default: "./content/api/"
 runs:
   using: "docker"
-  image: "docker://ghcr.io/zymbit-docs/hugoify-api-docs:latest"
+  # Built from this repo at run time, so `@<ref>` runs that ref's code. The
+  # published :latest image went stale when its build broke in 2022.
+  image: "Dockerfile"
