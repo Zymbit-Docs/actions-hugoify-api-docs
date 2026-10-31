@@ -478,6 +478,11 @@ class Renderer:
 
     def tidy_text(self, text):
 
+        # Whitespace between <pre> and <code> would render as a blank first
+        # and last line of every code block.
+        text = re_sub(r"<pre>\s*<code", "<pre><code", text)
+        text = re_sub(r"</code>\s*</pre>", "</code></pre>", text)
+
         text = re_sub(
             r"&#8221;([\w -]+?)&#8221;",
             r"&#8220;\1&#8221;",
@@ -614,6 +619,22 @@ class Renderer:
             elem.add_text("".join(node.itertext()))
             if node.tail:
                 elem.tail = node.tail.rstrip() + " "
+            return elem
+
+    def _parse_node_literal_block(self, node, context=None, **kwargs):
+        # A code block keeps its text exactly as written. The pretty-printer
+        # only re-indents whitespace between elements, never the text of a
+        # leaf element, so the code itself is safe; tidy_text closes the gap
+        # it leaves between <pre> and <code>.
+        with DocTree("pre", **context) as d:
+            elem = Node("pre", **d)
+            code = Node("code", **d)
+            if language := node.get("language"):
+                code.set("class", f"language-{language}")
+            code.text = "".join(node.itertext())
+            elem.append(code)
+            elem.text = ""
+            elem.tail = ""
             return elem
 
     def _parse_node_title_reference(self, node, context=None, **kwargs):
