@@ -19,6 +19,9 @@ jobs:
 
       - name: Publish built image
         id: publish
+        # Only master publishes :latest; a push to any other branch must not
+        # replace the image other repos may still pull.
+        if: github.ref == 'refs/heads/master'
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |

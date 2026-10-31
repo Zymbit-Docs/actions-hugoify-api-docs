@@ -108,6 +108,11 @@ class CodeFile(object):
 
         print(f"Parsing domain: {self.domain}")
 
+    # Inline elements stay inside the paragraph they appear in; anything else
+    # inside a paragraph is a block (a list, a nested paragraph, a definition
+    # list) and is lifted out to sit beside it.
+    INLINE_TAGS = {"literal", "strong", "emphasis", "title_reference", "reference"}
+
     @staticmethod
     def unnest_paragraphs(elems, unnested: list = None, dropped_elems: list = None):
         if unnested is None:
@@ -116,18 +121,67 @@ class CodeFile(object):
             dropped_elems = []
 
         for elem in elems:
-            if elem.tag == "paragraph":
-                subnest = list(elem.getchildren())
-                if len(subnest):
-                    CodeFile.unnest_paragraphs(subnest, unnested)
-                else:
-                    unnested.append(deepcopy(elem))
+            if elem.tag == "paragraph" and len(elem):
+                CodeFile.__split_paragraph(elem, unnested)
             else:
                 unnested.append(deepcopy(elem))
 
             dropped_elems.append(elem)
 
         return unnested, dropped_elems
+
+    @staticmethod
+    def __split_paragraph(elem, unnested: list):
+        """Split a paragraph that contains block elements into a flat sequence.
+
+        The paragraph's own text, its inline children and the text between its
+        children are kept, in order; previously only the children survived.
+        Text that follows a block is a continuation of the same paragraph, so a
+        nested paragraph followed by inline content (as Sphinx emits around an
+        inline literal) stays one paragraph rather than splitting a sentence.
+        """
+        current = E.paragraph()
+        current.text = elem.text
+
+        def has_content(para):
+            return bool((para.text or "").strip()) or len(para)
+
+        def append_text(para, text):
+            if not text:
+                return
+            if len(para):
+                para[-1].tail = (para[-1].tail or "") + text
+            else:
+                para.text = (para.text or "") + text
+
+        for child in elem:
+            if child.tag in CodeFile.INLINE_TAGS:
+                current.append(deepcopy(child))
+            elif child.tag == "paragraph" and not any(
+                grandchild.tag not in CodeFile.INLINE_TAGS for grandchild in child
+            ):
+                # A nested paragraph of plain text: merge it into this one.
+                append_text(current, child.text)
+                for grandchild in child:
+                    current.append(deepcopy(grandchild))
+                append_text(current, child.tail)
+                continue
+            else:
+                if has_content(current):
+                    unnested.append(current)
+                block = deepcopy(child)
+                block.tail = None
+                if block.tag == "paragraph":
+                    CodeFile.__split_paragraph(block, unnested)
+                else:
+                    unnested.append(block)
+                current = E.paragraph()
+                current.text = child.tail
+                continue
+            # Inline child: its tail travels with it inside `current`.
+
+        if has_content(current):
+            unnested.append(current)
 
     def parse(self):
         self.preparser_format()
@@ -153,6 +207,10 @@ class CodeFile(object):
 
             lines = elem.text.split("\n")
             new_text = " ".join([_.strip() for _ in lines])
+            if elem.text[:1].isspace():
+                new_text = " " + new_text.lstrip()
+            if elem.text[-1:].isspace():
+                new_text = new_text.rstrip() + " "
 
             elem.text = new_text
 
@@ -256,7 +314,7 @@ class CodeFile(object):
                         continue
             elif len(elem) > 1:
                 for child in elem.xpath("./*"):
-                    if child.tag not in {"strong", "title_reference"}:
+                    if child.tag not in {"strong", "title_reference", "literal"}:
                         break
                 else:
                     continue
@@ -283,7 +341,9 @@ class CodeFile(object):
                         elem.find("..").remove(elem)
                 continue
 
-            if len(elem) and elem.text[-1] == " ":
+            # Text followed by an inline element is not the end of the
+            # paragraph, so it never takes a closing full stop.
+            if len(elem):
                 continue
 
             elem.text = elem.text.strip()
@@ -1174,13 +1234,13 @@ class CodeFile(object):
                 exc_line = None
                 if self.domain == self.DOMAIN_CPP or self.domain == self.DOMAIN_C:
                     exc_line = exc_values[0].find("./literal")
-                    exc_name = exc_line.text.strip()
+                    exc_name = "".join(exc_line.itertext()).strip()
                     exc_desc = exc_line.tail
                 else:
                     exc_line = exc_values[0].xpath(
                         "./*[starts-with(name(), 'literal')]"
                     )[0]
-                    exc_name = exc_line.text.strip()
+                    exc_name = "".join(exc_line.itertext()).strip()
 
                     if exc_line.tail:
                         exc_desc = exc_line.tail.lstrip(" –")
