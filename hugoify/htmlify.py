@@ -547,7 +547,7 @@ class Renderer:
             tag = f"{tag}_{subfunction}"
 
         if node.tail and not node.tail.isspace():
-            if node.tag not in {"strong", "title_reference", "emphasis"}:
+            if node.tag not in {"strong", "title_reference", "emphasis", "literal"}:
                 warnings.warn(
                     (
                         f"The element {tag} contains a tail. No elements should have tails.\n"
@@ -602,6 +602,19 @@ class Renderer:
             elem = Node("em", **d)
             parsed = self.parse_content(elem, node, context=d, **kwargs)
             return parsed
+
+    def _parse_node_literal(self, node, context=None, **kwargs):
+        # Inline code is rendered as its plain text: Sphinx can nest a
+        # cross-reference inside it (e.g. an exception class name), which has
+        # no parser of its own and would otherwise be dropped.
+        with DocTree("code", **context) as d:
+            elem = Node("code", **d)
+            elem.text = ""
+            elem.tail = ""
+            elem.add_text("".join(node.itertext()))
+            if node.tail:
+                elem.tail = node.tail.rstrip() + " "
+            return elem
 
     def _parse_node_title_reference(self, node, context=None, **kwargs):
         with DocTree("span", **context) as d:
